@@ -45,9 +45,16 @@ class TestRegistry:
     def test_keyboard(self):
         assert isinstance(get_detector("keyboard"), KeyboardDetector)
 
-    def test_cv_models_not_yet_implemented(self):
+    def test_mediapipe_returns_video_counter(self):
+        from reps_for_claude.video import VideoRepCounter
+
+        det = get_detector("mediapipe", camera_index=2)
+        assert isinstance(det, VideoRepCounter)
+        assert det._source == 2
+
+    def test_yolo_not_yet_implemented(self):
         with pytest.raises(DetectorError, match="not implemented yet"):
-            get_detector("mediapipe")
+            get_detector("yolo-pose")
 
     def test_unknown_name(self):
         with pytest.raises(DetectorError, match="unknown detector"):

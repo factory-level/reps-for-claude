@@ -22,10 +22,18 @@ real `claude` on your `PATH`.
 ## Use
 
 ```sh
-reps earn pushup   # count reps (keyboard detector for now; CV models later)
-reps status        # plan progress, balance, cap state
+reps earn pushup                       # count reps (keyboard or webcam detector)
+reps analyze workout.mp4 -e pushup     # count reps in a video file (never credits)
+reps status                            # plan progress, balance, cap state
 reps balance
-reps finish        # review/edit counts → Form report for your trainer
+reps finish                            # review/edit counts → Form report for your trainer
+```
+
+For webcam pose counting, install the CV extra and switch the detector:
+
+```sh
+uv sync --extra cv         # mediapipe + opencv; pose model downloads once (~5MB)
+# config.toml: [detector] name = "mediapipe"
 ```
 
 With the shim installed, `claude` launches only when you have credit, meters
@@ -48,7 +56,9 @@ Set `REPS_HOME` to relocate config + state (used by the test suite).
 ## Development
 
 ```sh
-uv run pytest
+uv run pytest                                # unit suite (no camera, no model)
+uv run python scripts/fetch_fixtures.py      # download CC-licensed workout clips
+uv run pytest -m cvvideo                     # real pose estimation over the clips
 ```
 
 State lives in `~/.local/state/reps-for-claude/` — a single JSON ledger with
@@ -57,6 +67,7 @@ guard. Design spec: `docs/superpowers/specs/2026-07-06-reps-for-claude-design.md
 
 ## Roadmap
 
-- Real webcam rep detection (`detector.py` interface is ready; MediaPipe Pose
-  vs YOLO-Pose decision pending)
+- Live-camera validation once a webcam is plugged in (the detector already
+  takes a camera index — only the hardware is missing)
+- Threshold tuning per exercise from real footage of *your* form
 - Multi-session shared clock supervisor

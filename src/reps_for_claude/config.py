@@ -26,7 +26,8 @@ squat = 40
 row = 24
 
 [detector]
-name = "keyboard"                 # rep counter: "keyboard" now, CV models later
+name = "keyboard"                 # "keyboard" or "mediapipe" (webcam pose counting)
+camera_index = 0                  # which /dev/video* to use for mediapipe
 
 [lock]
 enabled = false                   # lock the desktop when balance hits zero mid-session
@@ -54,12 +55,20 @@ def state_dir() -> Path:
     return Path.home() / ".local" / "state" / "reps-for-claude"
 
 
+def cache_dir() -> Path:
+    home = os.environ.get("REPS_HOME")
+    if home:
+        return Path(home) / "cache"
+    return Path.home() / ".cache" / "reps-for-claude"
+
+
 @dataclass
 class Config:
     seconds_per_rep: int = DEFAULT_SECONDS_PER_REP
     precompletion_cap_seconds: int = DEFAULT_PRECOMPLETION_CAP
     plan: dict[str, int] = field(default_factory=dict)
     detector: str = "keyboard"
+    camera_index: int = 0
     lock_enabled: bool = False
     real_claude: str = ""
 
@@ -108,6 +117,13 @@ def load(path: Path | None = None) -> Config:
         if not isinstance(detector["name"], str):
             raise ConfigError("detector.name must be a string")
         cfg.detector = detector["name"]
+    if "camera_index" in detector:
+        idx = detector["camera_index"]
+        if not isinstance(idx, int) or isinstance(idx, bool) or idx < 0:
+            raise ConfigError(
+                f"detector.camera_index must be a non-negative integer, got {idx!r}"
+            )
+        cfg.camera_index = idx
 
     lock = raw.get("lock", {})
     if "enabled" in lock:

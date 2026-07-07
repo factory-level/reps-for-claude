@@ -44,7 +44,7 @@ def earn(exercise: str) -> None:
     """Do reps for EXERCISE and bank Claude time."""
     cfg, ledger = _load()
     try:
-        det = detector_mod.get_detector(cfg.detector)
+        det = detector_mod.get_detector(cfg.detector, camera_index=cfg.camera_index)
     except detector_mod.DetectorError as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(2)
@@ -64,6 +64,29 @@ def earn(exercise: str) -> None:
         )
     if result.workout_complete:
         typer.echo("Daily workout complete! Credit is now uncapped.")
+
+
+@app.command()
+def analyze(
+    video: Path = typer.Argument(..., help="Video file to analyze."),
+    exercise: str = typer.Option(..., "--exercise", "-e", help="Exercise to count."),
+) -> None:
+    """Count reps in a video file (analysis only — never credits the ledger)."""
+    if not video.exists():
+        typer.echo(f"error: no such file: {video}", err=True)
+        raise typer.Exit(2)
+    from .video import VideoRepCounter
+
+    counter = VideoRepCounter(str(video))
+    try:
+        total = counter.run(exercise, on_rep=lambda n: typer.echo(f"  rep {n}"))
+    except detector_mod.DetectorError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(2)
+    typer.echo(f"{total} {exercise} rep(s) detected in {video.name}")
+    for i, ms in enumerate(counter.rep_timestamps_ms, 1):
+        typer.echo(f"  rep {i} at {ms / 1000:.1f}s")
+    typer.echo("(analysis only — no credit banked)")
 
 
 @app.command()

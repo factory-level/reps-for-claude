@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["typer>=0.12"]
 
+[project.optional-dependencies]
+cv = ["mediapipe>=0.10.14", "opencv-python>=4.9"]
+
 [project.scripts]
 reps = "reps_for_claude.cli:main"
 
@@ -21,3 +24,7 @@ dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not cvvideo'"
+markers = [
+    "cvvideo: integration tests running real pose estimation over video fixtures",
+]

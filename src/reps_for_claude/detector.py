@@ -60,7 +60,7 @@ class KeyboardDetector(RepCounter):
         return count
 
 
-_CV_NAMES = ("mediapipe", "yolo", "yolo-pose")
+_FUTURE_CV_NAMES = ("yolo", "yolo-pose")
 
 
 def get_detector(name: str, **kwargs: object) -> RepCounter:
@@ -68,9 +68,16 @@ def get_detector(name: str, **kwargs: object) -> RepCounter:
         return StubDetector(int(kwargs.get("total_reps", 0)))  # type: ignore[call-overload]
     if name == "keyboard":
         return KeyboardDetector()
-    if name in _CV_NAMES:
+    if name == "mediapipe":
+        from .video import VideoRepCounter
+
+        return VideoRepCounter(
+            int(kwargs.get("camera_index", 0)),  # type: ignore[call-overload]
+            show=bool(kwargs.get("show", True)),
+        )
+    if name in _FUTURE_CV_NAMES:
         raise DetectorError(
-            f"detector {name!r} is not implemented yet — the interface is ready, "
-            "the model is still to be chosen (see design spec)"
+            f"detector {name!r} is not implemented yet — use 'mediapipe' "
+            "(see design spec)"
         )
     raise DetectorError(f"unknown detector {name!r}")
