@@ -24,21 +24,31 @@ class ExerciseSpec:
     up_above: float
     min_visibility: float = 0.5
 
-    def angle_from(self, landmarks: Landmarks) -> float | None:
-        """Joint angle from the most visible body side, or None if neither is."""
-        best: tuple[float, list[tuple[float, float, float]]] | None = None
+    def measured_joints(self, landmarks: Landmarks) -> tuple[str, str, str] | None:
+        """The three landmark names on the most visible body side, or None.
+
+        This is the joint triple the angle is (or would be) measured from, so
+        the visualizer can highlight exactly what the counter is watching.
+        """
+        best: tuple[float, tuple[str, str, str]] | None = None
         for side in SIDES:
-            points = [landmarks.get(f"{side}_{joint}") for joint in self.joints]
+            names = tuple(f"{side}_{joint}" for joint in self.joints)
+            points = [landmarks.get(name) for name in names]
             if any(p is None for p in points):
                 continue
             visibility = min(p[2] for p in points)  # type: ignore[index]
             if visibility < self.min_visibility:
                 continue
             if best is None or visibility > best[0]:
-                best = (visibility, points)  # type: ignore[arg-type]
-        if best is None:
+                best = (visibility, names)  # type: ignore[arg-type]
+        return best[1] if best else None
+
+    def angle_from(self, landmarks: Landmarks) -> float | None:
+        """Joint angle from the most visible body side, or None if neither is."""
+        names = self.measured_joints(landmarks)
+        if names is None:
             return None
-        a, b, c = best[1]
+        a, b, c = (landmarks[name] for name in names)
         try:
             return angle((a[0], a[1]), (b[0], b[1]), (c[0], c[1]))
         except ValueError:

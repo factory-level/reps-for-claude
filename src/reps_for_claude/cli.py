@@ -70,6 +70,12 @@ def earn(exercise: str) -> None:
 def analyze(
     video: Path = typer.Argument(..., help="Video file to analyze."),
     exercise: str = typer.Option(..., "--exercise", "-e", help="Exercise to count."),
+    output: Path = typer.Option(
+        None, "--output", "-o", help="Write an annotated visualization video here."
+    ),
+    show: bool = typer.Option(
+        False, "--show/--no-show", help="Pop up a live detection window (press q to stop)."
+    ),
 ) -> None:
     """Count reps in a video file (analysis only — never credits the ledger)."""
     if not video.exists():
@@ -77,16 +83,55 @@ def analyze(
         raise typer.Exit(2)
     from .video import VideoRepCounter
 
-    counter = VideoRepCounter(str(video))
+    counter = VideoRepCounter(str(video), show=show, annotate=bool(output))
+    on_frame, finalize = _writer_sink(video, output)
     try:
-        total = counter.run(exercise, on_rep=lambda n: typer.echo(f"  rep {n}"))
+        total = counter.run(
+            exercise, on_rep=lambda n: typer.echo(f"  rep {n}"), on_frame=on_frame
+        )
     except detector_mod.DetectorError as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(2)
+    finalize()
     typer.echo(f"{total} {exercise} rep(s) detected in {video.name}")
     for i, ms in enumerate(counter.rep_timestamps_ms, 1):
         typer.echo(f"  rep {i} at {ms / 1000:.1f}s")
+    if output:
+        typer.echo(f"visualization written: {output}")
     typer.echo("(analysis only — no credit banked)")
+
+
+def _writer_sink(video, output):
+    """Return (on_frame, finalize) that writes annotated frames to `output`.
+
+    The counter draws the overlay; this sink only encodes. No output -> a
+    no-op pair. The writer is created lazily on the first frame (once its size
+    is known) and reuses the input's frame rate for playback-accurate timing.
+    """
+    if output is None:
+        return None, lambda: None
+
+    import cv2
+
+    probe = cv2.VideoCapture(str(video))
+    fps = probe.get(cv2.CAP_PROP_FPS) or 25.0
+    probe.release()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer: dict[str, object] = {}
+
+    def on_frame(frame, landmarks, angle, count):
+        if "w" not in writer:
+            h, w = frame.shape[:2]
+            writer["w"] = cv2.VideoWriter(str(output), fourcc, fps, (w, h))
+        writer["w"].write(frame)  # type: ignore[union-attr]
+        return False
+
+    def finalize():
+        if "w" in writer:
+            writer["w"].release()  # type: ignore[union-attr]
+
+    return on_frame, finalize
 
 
 @app.command()

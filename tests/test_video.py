@@ -96,3 +96,19 @@ class TestVideoRepCounter:
         clip = write_clip(tmp_path / "clip.avi", frames=len(script))
         counter, _ = make_counter(clip, script)
         assert counter.run("pushup", lambda n: None) == 0
+
+    def test_on_frame_fires_once_per_decoded_frame(self, tmp_path):
+        # includes a None (no-pose) frame — the hook must still fire for it
+        script = [arm_pose("up"), None, arm_pose("down"), arm_pose("up")]
+        clip = write_clip(tmp_path / "clip.avi", frames=len(script))
+        counter, _ = make_counter(clip, script)
+        frames = []
+        counter.run(
+            "pushup",
+            lambda n: None,
+            on_frame=lambda f, lm, ang, c: frames.append((lm is not None, ang, c)),
+        )
+        assert len(frames) == 4
+        # rep completes on the final up; count reaches 1, last angle is not None
+        assert frames[-1][2] == 1
+        assert frames[1][0] is False  # the no-pose frame reported no landmarks

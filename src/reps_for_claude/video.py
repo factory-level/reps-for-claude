@@ -6,11 +6,17 @@ without MediaPipe or a camera.
 
 from __future__ import annotations
 
-from typing import Callable
+import os
+from typing import Callable, Optional
 
 from .detector import DetectorError, OnRep, RepCounter
-from .exercises import get_spec
+from .exercises import Landmarks, get_spec
 from .angles import RepStateMachine
+
+# Called once per decoded frame: (frame, landmarks_or_None, angle_or_None, count).
+# Fires even on frames with no pose so an output video keeps the full length.
+# Return True to stop the run early.
+FrameHook = Callable[[object, Optional[Landmarks], Optional[float], int], Optional[bool]]
 
 
 def _default_estimator_factory():
@@ -34,6 +40,8 @@ class VideoRepCounter(RepCounter):
 
     name = "video"
 
+    WINDOW = "reps-for-claude"
+
     def __init__(
         self,
         source: int | str,
@@ -41,14 +49,20 @@ class VideoRepCounter(RepCounter):
         estimator_factory: Callable[[], object] | None = None,
         cap_factory: Callable[[object], object] | None = None,
         show: bool = False,
+        annotate: bool = False,
     ) -> None:
         self._source = source
         self._estimator_factory = estimator_factory or _default_estimator_factory
         self._cap_factory = cap_factory or _default_cap_factory
         self._show = show
+        # Draw the overlay onto each frame when displaying a window or when a
+        # consumer (e.g. the file writer) wants annotated frames.
+        self._annotate = annotate or show
         self.rep_timestamps_ms: list[float] = []
 
-    def run(self, exercise: str, on_rep: OnRep) -> int:
+    def run(
+        self, exercise: str, on_rep: OnRep, on_frame: FrameHook | None = None
+    ) -> int:
         try:
             spec = get_spec(exercise)
         except KeyError as e:
@@ -61,29 +75,82 @@ class VideoRepCounter(RepCounter):
         machine = RepStateMachine(spec.down_below, spec.up_above)
         self.rep_timestamps_ms = []
         count = 0
+        # Pace a file preview to its real frame rate; a live camera is already
+        # real-time, so poll with the minimum 1ms delay.
+        self._key_delay = 1
+        if self._show and isinstance(self._source, str):
+            self._key_delay = self._frame_delay_ms(cap)
         try:
             while True:
                 ok, frame = cap.read()  # type: ignore[attr-defined]
                 if not ok:
                     break  # end of file / camera gone
                 landmarks = estimator.landmarks(frame)  # type: ignore[attr-defined]
-                if landmarks is None:
-                    continue
-                current = spec.angle_from(landmarks)
-                if current is None:
-                    continue
-                if machine.update(current):
+                current = spec.angle_from(landmarks) if landmarks else None
+                if current is not None and machine.update(current):
                     count += 1
                     self.rep_timestamps_ms.append(self._position_ms(cap))
                     on_rep(count)
-                if self._show and self._preview(frame, exercise, count):
+                if self._annotate:
+                    self._draw(frame, landmarks, spec, current, count)
+                if self._show and self._display(frame):
+                    break  # user pressed q
+                if on_frame is not None and on_frame(frame, landmarks, current, count):
                     break
         finally:
             cap.release()  # type: ignore[attr-defined]
+            if self._show:
+                self._destroy_window()
             close = getattr(estimator, "close", None)
             if close:
                 close()
         return count
+
+    @staticmethod
+    def _draw(frame, landmarks, spec, angle, count) -> None:
+        from .visualize import draw_overlay
+
+        draw_overlay(frame, landmarks, spec, angle, count)
+
+    @staticmethod
+    def _frame_delay_ms(cap) -> int:
+        import cv2
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        return max(1, int(1000.0 / fps))
+
+    def _display(self, frame) -> bool:
+        """Show the frame in a window; True when the user pressed q."""
+        import cv2
+
+        self._quiet_qt_fonts()
+        try:
+            cv2.imshow(self.WINDOW, frame)
+            return (cv2.waitKey(self._key_delay) & 0xFF) == ord("q")
+        except cv2.error as e:
+            print(f"warning: cannot open a display window ({e}); ", end="")
+            print("continuing without live preview", flush=True)
+            self._show = False
+            return False
+
+    @staticmethod
+    def _quiet_qt_fonts() -> None:
+        """Point Qt at system fonts so the highgui window stops warning."""
+        if os.environ.get("QT_QPA_FONTDIR"):
+            return
+        for candidate in ("/usr/share/fonts", "/usr/local/share/fonts"):
+            if os.path.isdir(candidate):
+                os.environ["QT_QPA_FONTDIR"] = candidate
+                break
+
+    def _destroy_window(self) -> None:
+        try:
+            import cv2
+
+            cv2.destroyWindow(self.WINDOW)
+            cv2.waitKey(1)
+        except Exception:
+            pass
 
     @staticmethod
     def _position_ms(cap) -> float:
@@ -93,19 +160,3 @@ class VideoRepCounter(RepCounter):
             return float(cap.get(cv2.CAP_PROP_POS_MSEC))
         except Exception:
             return 0.0
-
-    def _preview(self, frame, exercise: str, count: int) -> bool:
-        """Show a live preview; True when the user pressed q to stop."""
-        import cv2
-
-        cv2.putText(
-            frame,
-            f"{exercise}: {count}  (q to finish)",
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.0,
-            (0, 255, 0),
-            2,
-        )
-        cv2.imshow("reps-for-claude", frame)
-        return (cv2.waitKey(1) & 0xFF) == ord("q")

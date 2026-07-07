@@ -47,6 +47,32 @@ def test_counts_match_manifest(entry):
     )
 
 
+def test_analyze_writes_visualization(tmp_path, monkeypatch):
+    """`reps analyze --output` produces a non-empty annotated video."""
+    manifest = load_manifest()
+    pytest.importorskip("mediapipe")
+    entry = manifest[0]
+    clip = FIXTURES / entry["file"]
+    if not clip.exists():
+        pytest.skip(f"{entry['file']} missing")
+
+    from typer.testing import CliRunner
+
+    from reps_for_claude.cli import app
+
+    home = tmp_path / "reps-home"
+    home.mkdir()
+    monkeypatch.setenv("REPS_HOME", str(home))
+    out = tmp_path / "annotated.mp4"
+    result = CliRunner().invoke(
+        app,
+        ["analyze", str(clip), "--exercise", entry["exercise"], "--output", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists() and out.stat().st_size > 0
+    assert "visualization written" in result.output
+
+
 def test_analyze_does_not_touch_ledger(tmp_path, monkeypatch):
     """`reps analyze` must never credit the ledger, even on a counted video."""
     manifest = load_manifest()

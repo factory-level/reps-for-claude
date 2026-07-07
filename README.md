@@ -24,10 +24,14 @@ real `claude` on your `PATH`.
 ```sh
 reps earn pushup                       # count reps (keyboard or webcam detector)
 reps analyze workout.mp4 -e pushup     # count reps in a video file (never credits)
+reps analyze workout.mp4 -e pushup --show      # live detection window (press q)
+reps analyze workout.mp4 -e pushup -o out.mp4  # write an annotated video
 reps status                            # plan progress, balance, cap state
 reps balance
 reps finish                            # review/edit counts → Form report for your trainer
 ```
+
+See `docs/demo/` for a sample annotated detection clip.
 
 For webcam pose counting, install the CV extra and switch the detector:
 
