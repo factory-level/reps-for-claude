@@ -16,13 +16,13 @@ def progress(targets: dict[str, int], done: dict[str, int]) -> dict[str, float]:
     """Fraction complete per goal, clamped to [0, 1]."""
     out: dict[str, float] = {}
     for exercise, target in targets.items():
-        out[exercise] = 1.0 if target <= 0 else min(1.0, done.get(exercise, 0) / target)
+        out[exercise] = 1.0 if target <= 0 else min(1.0, max(0.0, done.get(exercise, 0) / target))
     return out
 
 
 def most_behind(targets: dict[str, int], done: dict[str, int]) -> str | None:
     """The unmet goal with the lowest completion fraction; name tie-break."""
-    unmet = [ex for ex, target in targets.items() if done.get(ex, 0) < target]
+    unmet = [ex for ex, target in targets.items() if target > 0 and done.get(ex, 0) < target]
     if not unmet:
         return None
     return min(unmet, key=lambda ex: (done.get(ex, 0) / targets[ex], ex))

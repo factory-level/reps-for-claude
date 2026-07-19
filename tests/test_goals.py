@@ -11,6 +11,9 @@ class TestProgress:
     def test_missing_is_zero(self):
         assert progress({"squat": 60}, {}) == {"squat": 0.0}
 
+    def test_negative_done_clamps_to_zero(self):
+        assert progress({"squat": 60}, {"squat": -30}) == {"squat": 0.0}
+
 
 class TestMostBehind:
     def test_picks_lowest_fraction(self):
@@ -25,6 +28,10 @@ class TestMostBehind:
 
     def test_name_tiebreak(self):
         assert most_behind({"squat": 10, "bench": 10}, {}) == "bench"
+
+    def test_zero_target_never_divides(self):
+        # target 0 with negative done must not raise and counts as met
+        assert most_behind({"squat": 0}, {"squat": -1}) is None
 
 
 class TestPrescribe:
