@@ -11,7 +11,7 @@ def test_log_lift_accumulates_reps_and_volume(tmp_path):
 
 def test_persists_and_reloads_same_week(tmp_path):
     WeeklyLog(tmp_path, today=lambda: "2026-07-19").log_jumprope(30.0)
-    log = WeeklyLog(tmp_path, today=lambda: "2026-07-19")  # reload before save? see below
+    log = WeeklyLog(tmp_path, today=lambda: "2026-07-19")
     # nothing saved yet -> fresh
     assert log.state.jumprope_seconds == 0.0
 

@@ -142,3 +142,10 @@ def test_non_table_goals_rejected(tmp_path):
     path.write_text("goals = 5\n")
     with pytest.raises(ConfigError):
         load(path)
+
+
+def test_unknown_weekly_goal_exercise_rejected(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[goals.weekly]\ndeadlift = 60\n")
+    with pytest.raises(ConfigError, match="deadlift"):
+        load(path)

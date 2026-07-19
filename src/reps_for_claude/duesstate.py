@@ -27,7 +27,7 @@ class FileDuesState:
     def owed(self) -> bool:
         try:
             return bool(json.loads(self._path.read_text())["owed"])
-        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        except (OSError, KeyError, TypeError, ValueError):
             return False
 
     def set_owed(self, owed: bool) -> None:

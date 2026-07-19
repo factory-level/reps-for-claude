@@ -76,9 +76,6 @@ class TestFinish:
 
 
 def test_guard_and_shim_commands_removed():
-    from typer.testing import CliRunner
-    from reps_for_claude.cli import app
-    runner = CliRunner()
     for cmd in ("guard", "install-shim", "uninstall-shim"):
         result = runner.invoke(app, [cmd, "--help"])
         assert result.exit_code != 0, f"{cmd} should no longer exist"

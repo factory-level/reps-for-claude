@@ -12,6 +12,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .exercises import SPECS
+
 DEFAULT_SECONDS_PER_REP = 90
 DEFAULT_PRECOMPLETION_CAP = 1200
 
@@ -42,7 +44,7 @@ stretch_seconds = 30              # stretch hold target
 name = "keyboard"                 # "keyboard" or "mediapipe" (webcam pose counting)
 camera_index = 0                  # which /dev/video* to use for mediapipe
 width = 1280                      # camera frame width
-height = 720                       # camera frame height
+height = 720                      # camera frame height
 
 [display]
 scoreboard_monitor = 1            # which monitor (0-indexed) shows scoreboard
@@ -181,6 +183,10 @@ def load(path: Path | None = None) -> Config:
         name: _require_positive_int(target, f"goals.weekly.{name}")
         for name, target in weekly.items()
     }
+    for name in cfg.weekly_goals:
+        if name not in SPECS:
+            known = ", ".join(sorted(SPECS))
+            raise ConfigError(f"unknown exercise {name!r}; known: {known}")
 
     brk = raw.get("break", {})
     for key, attr in (
