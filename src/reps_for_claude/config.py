@@ -25,12 +25,31 @@ pushup = 30
 squat = 40
 row = 24
 
+[session]
+work_minutes = 6                  # coding minutes before the machine locks
+
+[goals.weekly]                    # weekly rep targets that drive lock prescriptions
+squat = 60
+bench = 40
+row = 40
+
+[break]
+default_reps = 10                 # reps prescribed per lift set
+jumprope_seconds = 60             # jump-rope payment target
+stretch_seconds = 30              # stretch hold target
+
 [detector]
 name = "keyboard"                 # "keyboard" or "mediapipe" (webcam pose counting)
 camera_index = 0                  # which /dev/video* to use for mediapipe
+width = 1280                       # camera frame width
+height = 720                       # camera frame height
+
+[display]
+scoreboard_monitor = 1             # which monitor (0-indexed) shows scoreboard
 
 [lock]
 enabled = false                   # lock the desktop when balance hits zero mid-session
+override_password = ""             # password to unlock; empty means no override
 
 [claude]
 real_binary = ""                  # path to the real claude; autodetected if empty
@@ -71,6 +90,15 @@ class Config:
     camera_index: int = 0
     lock_enabled: bool = False
     real_claude: str = ""
+    work_minutes: int = 6
+    weekly_goals: dict[str, int] = field(default_factory=dict)
+    default_reps: int = 10
+    jumprope_seconds: int = 60
+    stretch_seconds: int = 30
+    cam_width: int = 1280
+    cam_height: int = 720
+    scoreboard_monitor: int = 1
+    override_password: str = ""
 
 
 def _require_positive_int(value: object, name: str) -> int:
@@ -136,6 +164,46 @@ def load(path: Path | None = None) -> Config:
         if not isinstance(claude["real_binary"], str):
             raise ConfigError("claude.real_binary must be a string")
         cfg.real_claude = claude["real_binary"]
+
+    session = raw.get("session", {})
+    if "work_minutes" in session:
+        cfg.work_minutes = _require_positive_int(
+            session["work_minutes"], "session.work_minutes"
+        )
+
+    weekly = raw.get("goals", {}).get("weekly", {})
+    if not isinstance(weekly, dict):
+        raise ConfigError("goals.weekly must be a table of exercise = target entries")
+    cfg.weekly_goals = {
+        name: _require_positive_int(target, f"goals.weekly.{name}")
+        for name, target in weekly.items()
+    }
+
+    brk = raw.get("break", {})
+    for key, attr in (
+        ("default_reps", "default_reps"),
+        ("jumprope_seconds", "jumprope_seconds"),
+        ("stretch_seconds", "stretch_seconds"),
+    ):
+        if key in brk:
+            setattr(cfg, attr, _require_positive_int(brk[key], f"break.{key}"))
+
+    for key, attr in (("width", "cam_width"), ("height", "cam_height")):
+        if key in detector:
+            setattr(cfg, attr, _require_positive_int(detector[key], f"detector.{key}"))
+
+    if "scoreboard_monitor" in raw.get("display", {}):
+        idx = raw["display"]["scoreboard_monitor"]
+        if not isinstance(idx, int) or isinstance(idx, bool) or idx < 0:
+            raise ConfigError(
+                f"display.scoreboard_monitor must be a non-negative integer, got {idx!r}"
+            )
+        cfg.scoreboard_monitor = idx
+
+    if "override_password" in lock:
+        if not isinstance(lock["override_password"], str):
+            raise ConfigError("lock.override_password must be a string")
+        cfg.override_password = lock["override_password"]
 
     return cfg
 

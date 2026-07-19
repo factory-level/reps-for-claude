@@ -80,3 +80,58 @@ class TestWriteSample:
         path.write_text("[plan]\nrow = 1\n")
         write_sample(path)
         assert load(path).plan == {"row": 1}
+
+
+def test_loads_new_model_sections(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[session]
+work_minutes = 6
+
+[goals.weekly]
+squat = 60
+bench = 40
+
+[break]
+default_reps = 12
+jumprope_seconds = 90
+stretch_seconds = 45
+
+[detector]
+width = 640
+height = 480
+
+[display]
+scoreboard_monitor = 2
+
+[lock]
+override_password = "hunter2"
+"""
+    )
+    cfg = load(path)
+    assert cfg.work_minutes == 6
+    assert cfg.weekly_goals == {"squat": 60, "bench": 40}
+    assert cfg.default_reps == 12
+    assert cfg.jumprope_seconds == 90
+    assert cfg.stretch_seconds == 45
+    assert cfg.cam_width == 640
+    assert cfg.cam_height == 480
+    assert cfg.scoreboard_monitor == 2
+    assert cfg.override_password == "hunter2"
+
+
+def test_new_model_defaults(tmp_path):
+    cfg = load(tmp_path / "missing.toml")
+    assert cfg.work_minutes == 6
+    assert cfg.weekly_goals == {}
+    assert cfg.default_reps == 10
+    assert cfg.scoreboard_monitor == 1
+    assert cfg.override_password == ""
+
+
+def test_weekly_goals_reject_non_positive(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[goals.weekly]\nsquat = 0\n")
+    with pytest.raises(ConfigError):
+        load(path)
