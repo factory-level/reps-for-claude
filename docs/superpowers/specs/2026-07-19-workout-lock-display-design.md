@@ -119,9 +119,9 @@ time, plus a `target`.
 
 `config` defines a weekly plan (per-exercise weekly rep/set targets, e.g.
 `squat = 60`, `bench = 40`). `goals.py` tracks cumulative weekly progress (from the
-ledger) and, at each lock, **prescribes the next payment**: one set of whichever
-goal is most behind, or lets you pick, with jump rope always available as an
-alternative. The scoreboard shows progress bars toward each weekly target and
+ledger) and, at each lock, **prescribes the next payment**: it **auto-picks** one
+set of whichever weekly goal is most behind, with a **manual override** on the lock
+screen to choose a different lift, and jump rope always available as an alternative. The scoreboard shows progress bars toward each weekly target and
 resets weekly. Logged lbs accumulate as weekly **volume** for the trainer report.
 
 ## Config sketch
