@@ -135,3 +135,10 @@ def test_weekly_goals_reject_non_positive(tmp_path):
     path.write_text("[goals.weekly]\nsquat = 0\n")
     with pytest.raises(ConfigError):
         load(path)
+
+
+def test_non_table_goals_rejected(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("goals = 5\n")
+    with pytest.raises(ConfigError):
+        load(path)

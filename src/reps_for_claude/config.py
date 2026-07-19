@@ -41,15 +41,15 @@ stretch_seconds = 30              # stretch hold target
 [detector]
 name = "keyboard"                 # "keyboard" or "mediapipe" (webcam pose counting)
 camera_index = 0                  # which /dev/video* to use for mediapipe
-width = 1280                       # camera frame width
+width = 1280                      # camera frame width
 height = 720                       # camera frame height
 
 [display]
-scoreboard_monitor = 1             # which monitor (0-indexed) shows scoreboard
+scoreboard_monitor = 1            # which monitor (0-indexed) shows scoreboard
 
 [lock]
 enabled = false                   # lock the desktop when balance hits zero mid-session
-override_password = ""             # password to unlock; empty means no override
+override_password = ""            # password to unlock; empty means no override
 
 [claude]
 real_binary = ""                  # path to the real claude; autodetected if empty
@@ -171,7 +171,10 @@ def load(path: Path | None = None) -> Config:
             session["work_minutes"], "session.work_minutes"
         )
 
-    weekly = raw.get("goals", {}).get("weekly", {})
+    goals = raw.get("goals", {})
+    if not isinstance(goals, dict):
+        raise ConfigError("goals must be a table containing a [goals.weekly] table")
+    weekly = goals.get("weekly", {})
     if not isinstance(weekly, dict):
         raise ConfigError("goals.weekly must be a table of exercise = target entries")
     cfg.weekly_goals = {
