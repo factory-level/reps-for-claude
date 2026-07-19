@@ -42,6 +42,29 @@ def render_markdown(
     return "\n".join(lines)
 
 
+def render_weekly_markdown(
+    week: str,
+    targets: dict[str, int],
+    reps: dict[str, int],
+    volume_lbs: dict[str, float],
+    jumprope_seconds: float,
+) -> str:
+    lines = [
+        f"# Weekly Volume — {week}",
+        "",
+        "| Exercise | Target | Reps | Volume (lbs) |",
+        "|---|---|---|---|",
+    ]
+    for exercise in sorted(set(targets) | set(reps)):
+        target = targets.get(exercise, "—")
+        lines.append(
+            f"| {exercise} | {target} | {reps.get(exercise, 0)} "
+            f"| {volume_lbs.get(exercise, 0.0):.0f} |"
+        )
+    lines += ["", f"- Jump rope: {jumprope_seconds / 60:.1f} min", ""]
+    return "\n".join(lines)
+
+
 def review_counts(
     plan: dict[str, int],
     reps: dict[str, int],

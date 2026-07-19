@@ -1,6 +1,20 @@
 import json
 
-from reps_for_claude.report import finish, render_markdown, review_counts
+from reps_for_claude.report import finish, render_markdown, render_weekly_markdown, review_counts
+
+
+def test_render_weekly_markdown():
+    md = render_weekly_markdown(
+        week="2026-W29",
+        targets={"squat": 60, "bench": 40},
+        reps={"squat": 45, "bench": 40},
+        volume_lbs={"squat": 2025.0, "bench": 3200.0},
+        jumprope_seconds=180.0,
+    )
+    assert "# Weekly Volume — 2026-W29" in md
+    assert "| squat | 60 | 45 | 2025 |" in md
+    assert "| bench | 40 | 40 | 3200 |" in md
+    assert "Jump rope: 3.0 min" in md
 
 
 class TestRenderMarkdown:
