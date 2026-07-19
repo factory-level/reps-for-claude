@@ -1,7 +1,6 @@
 from typer.testing import CliRunner
 
 from reps_for_claude.cli import app
-from reps_for_claude.guard import EXIT_NO_CREDIT
 from reps_for_claude.ledger import Ledger
 
 runner = CliRunner()
@@ -64,22 +63,6 @@ class TestBalance:
         assert "0m 00s" in result.output
 
 
-class TestGuard:
-    def test_refuses_without_credit(self, reps_home):
-        write_config(reps_home)
-        result = runner.invoke(app, ["guard", "--", "/bin/true"])
-        assert result.exit_code == EXIT_NO_CREDIT
-
-    def test_runs_command_and_passes_exit_code(self, reps_home, monkeypatch):
-        write_config(reps_home)
-        monkeypatch.setenv("REPS_GUARD_TICK", "0.05")
-        ledger = Ledger(reps_home / "state")
-        ledger.set_balance(600.0)
-        ledger.save()
-        result = runner.invoke(app, ["guard", "--", "sh", "-c", "exit 5"])
-        assert result.exit_code == 5
-
-
 class TestFinish:
     def test_writes_form_files(self, reps_home):
         write_config(reps_home)
@@ -90,3 +73,12 @@ class TestFinish:
         files = sorted(p.name for p in (reps_home / "state" / "logs").iterdir())
         assert len(files) == 2
         assert files[0].endswith(".json") and files[1].endswith(".md")
+
+
+def test_guard_and_shim_commands_removed():
+    from typer.testing import CliRunner
+    from reps_for_claude.cli import app
+    runner = CliRunner()
+    for cmd in ("guard", "install-shim", "uninstall-shim"):
+        result = runner.invoke(app, [cmd, "--help"])
+        assert result.exit_code != 0, f"{cmd} should no longer exist"

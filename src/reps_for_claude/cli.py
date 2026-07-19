@@ -1,19 +1,16 @@
-"""Command-line interface: earn, status, balance, finish, guard, shim mgmt."""
+"""Command-line interface: earn, status, balance, finish."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import typer
 
 from . import config as config_mod
 from . import detector as detector_mod
-from . import economics, report, shim
+from . import economics, report
 from .earn import earn as run_earn
-from .guard import EXIT_NO_CREDIT, Guard
 from .ledger import Ledger
-from .lock import get_locker
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -173,54 +170,6 @@ def finish() -> None:
     """Review today's counts and write the Form report for your trainer."""
     cfg, ledger = _load()
     report.finish(ledger, cfg, config_mod.state_dir() / "logs")
-
-
-@app.command(
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
-)
-def guard(ctx: typer.Context) -> None:
-    """Run a command under the credit meter: reps guard -- claude ..."""
-    cfg, ledger = _load()
-    argv = list(ctx.args)
-    if not argv:
-        real = shim.find_real_claude(cfg)
-        if real is None:
-            typer.echo("error: no command given and real claude not found", err=True)
-            raise typer.Exit(EXIT_NO_CREDIT)
-        argv = [real]
-    tick = float(os.environ.get("REPS_GUARD_TICK", "5"))
-    g = Guard(ledger, cfg, get_locker(cfg.lock_enabled), tick_seconds=tick)
-    raise typer.Exit(g.run(argv))
-
-
-@app.command("install-shim")
-def install_shim(
-    bin_dir: Path = typer.Option(
-        Path.home() / ".local" / "bin", help="Directory (early on PATH) for the shim."
-    ),
-) -> None:
-    """Install the `claude` wrapper that enforces the credit meter."""
-    cfg, _ = _load()
-    try:
-        path = shim.install(cfg, bin_dir)
-    except FileNotFoundError as e:
-        typer.echo(f"error: {e}", err=True)
-        raise typer.Exit(2)
-    typer.echo(f"Shim installed: {path}")
-    typer.echo("Make sure that directory precedes the real claude on your PATH.")
-
-
-@app.command("uninstall-shim")
-def uninstall_shim(
-    bin_dir: Path = typer.Option(Path.home() / ".local" / "bin"),
-) -> None:
-    """Remove the `claude` wrapper."""
-    try:
-        removed = shim.uninstall(bin_dir)
-    except RuntimeError as e:
-        typer.echo(f"error: {e}", err=True)
-        raise typer.Exit(2)
-    typer.echo("Shim removed." if removed else "No shim found.")
 
 
 def main() -> None:
