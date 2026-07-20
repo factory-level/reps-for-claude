@@ -1,0 +1,60 @@
+# Reps for Claude wiki — MkDocs Material site over _docs/.
+# Local preview: uvx --with mkdocs-material mkdocs serve
+site_name: Reps for Claude
+site_description: A fitness pomodoro that locks your machine until the webcam sees you exercise.
+docs_dir: _docs
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Concepts:
+      - The big picture: concepts/big-picture.md
+      - The loop: concepts/the-loop.md
+      - Weekly goals: concepts/weekly-goals.md
+      - Counting your reps: concepts/detection.md
+      - Remembering your progress: concepts/storage.md
+  - Reference:
+      - Configuration: reference/config.md
+      - CLI commands: reference/cli.md
+      - Module map: reference/modules.md
+  - About:
+      - Roadmap: about/roadmap.md
+      - Glossary: about/glossary.md
