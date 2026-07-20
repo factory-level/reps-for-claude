@@ -47,27 +47,52 @@ def test_counts_match_manifest(entry):
     )
 
 
-def test_analyze_writes_visualization(tmp_path, monkeypatch):
-    """`reps analyze --output` produces a non-empty annotated video."""
+def test_video_writes_visualization(tmp_path, monkeypatch):
+    """VideoRepCounter(annotate=True) + a frame-writer sink produce a non-empty
+    annotated video while rep counting runs over a real fixture clip — the same
+    wiring the (now-retired) `reps analyze --output` command used, exercised
+    directly against the library API instead of a CLI process."""
     manifest = load_manifest()
     pytest.importorskip("mediapipe")
-    entry = manifest[0]
+    cv2 = pytest.importorskip("cv2")
+    entry = next((e for e in manifest if e["file"] == "squat_demo.webm"), manifest[0])
     clip = FIXTURES / entry["file"]
     if not clip.exists():
         pytest.skip(f"{entry['file']} missing")
 
-    from typer.testing import CliRunner
-
-    from reps_vision.cli import app
+    from reps_vision.video import VideoRepCounter
 
     home = tmp_path / "reps-home"
     home.mkdir()
     monkeypatch.setenv("REPS_HOME", str(home))
+
+    # Probe the input's frame rate up front, same as the legacy writer sink,
+    # so the annotated output plays back at the correct speed.
+    probe = cv2.VideoCapture(str(clip))
+    fps = probe.get(cv2.CAP_PROP_FPS) or 25.0
+    probe.release()
+
     out = tmp_path / "annotated.mp4"
-    result = CliRunner().invoke(
-        app,
-        ["analyze", str(clip), "--exercise", entry["exercise"], "--output", str(out)],
-    )
-    assert result.exit_code == 0, result.output
+    writer: dict[str, object] = {}
+
+    def on_frame(frame, landmarks, angle, count):
+        if "w" not in writer:
+            h, w = frame.shape[:2]
+            writer["w"] = cv2.VideoWriter(
+                str(out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h)
+            )
+        writer["w"].write(frame)  # type: ignore[union-attr]
+        return False
+
+    counter = VideoRepCounter(str(clip), annotate=True)
+    total = counter.run(entry["exercise"], lambda n: None, on_frame=on_frame)
+
+    if "w" in writer:
+        writer["w"].release()  # type: ignore[union-attr]
+
     assert out.exists() and out.stat().st_size > 0
-    assert "visualization written" in result.output
+    expected, tolerance = entry["expected_reps"], entry["tolerance"]
+    assert abs(total - expected) <= tolerance, (
+        f"{entry['file']}: detected {total} {entry['exercise']} reps, "
+        f"expected {expected}±{tolerance}"
+    )
