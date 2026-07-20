@@ -1,51 +1,27 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
+import type { Action } from "./WorkstationCard";
+import { WorkstationCard } from "./WorkstationCard";
+import { useSnapshot } from "./useSnapshot";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+const COMMANDS: Record<Action, (value?: number) => Promise<unknown>> = {
+  start_session: () => invoke("start_session"),
+  begin_workout: () => invoke("begin_workout"),
+  simulate_rep: (v) => invoke("simulate_progress", { value: v ?? 1, satisfied: false }),
+  simulate_done: () => invoke("simulate_progress", { value: 999, satisfied: true }),
+  confirm_weight: (v) => invoke("confirm_weight", { weight: v ?? 0 }),
+  resume_coding: () => invoke("resume_coding"),
+};
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
+export default function App() {
+  const snapshot = useSnapshot();
+  if (!snapshot) return <p>Connecting…</p>;
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      <WorkstationCard
+        snapshot={snapshot}
+        onAction={(a, value) => void COMMANDS[a](value)}
+      />
     </main>
   );
 }
-
-export default App;
