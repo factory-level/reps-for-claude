@@ -2,12 +2,36 @@
 
 **What this page tells you:** what is built, what comes next, and what is left out on purpose.
 
-## Where the project is
+> **Big change (2026-07-19):** the project pivoted to a ground-up rewrite as a
+> desktop app — Tauri (Rust) + React, with the Python detection stack kept as a
+> `vision/` sidecar. Source of truth: `docs/superpowers/specs/2026-07-19-tauri-rewrite-design.md`.
+> The Python-supervisor plan below (Plans A–C) is superseded; several concept
+> pages in this wiki still describe the old design and will be rewritten as the
+> new milestones land.
+
+## Where the rewrite is
 
 ```mermaid
 flowchart LR
-    A["Plan A<br/>Headless core<br/>✅ done"] --> B["Plan B<br/>Lock & session loop<br/>⬜ next"]
-    B --> C["Plan C<br/>Scoreboard & lock screen<br/>⬜ after"]
+    M1["Milestone 1<br/>Foundation<br/>✅ done"] --> M2["Milestone 2<br/>Vision sidecar driver<br/>🟡 debug view done"] --> M3["Milestone 3<br/>Lock loop<br/>⬜ next"]
+    M3 --> M4["Milestone 4<br/>Gym TV + themes<br/>⬜"] --> M5["Milestone 5<br/>Metrics + polish<br/>⬜"]
+```
+
+Milestone 1 delivered: the repo split (`app/` Tauri + React, `vision/` Python
+sidecar package, legacy Python deleted), the headless Rust engine (state
+machine, rotation + daily-capacity workout engine, coding timer, SQLite store —
+18 tests), and a minimal Workstation view over live snapshots. The app launches.
+
+Ahead of schedule from Milestone 2: a **Detection Debug view** — the app streams
+any exercise clip (one per exercise, fetched from YouTube) through the sidecar
+and shows annotated frames + live rep counts, for tuning the detectors.
+
+## The old plan (superseded, kept for history)
+
+```mermaid
+flowchart LR
+    A["Plan A<br/>Headless core<br/>✅ done"] --> B["Plan B<br/>Lock & session loop<br/>⬜ superseded"]
+    B --> C["Plan C<br/>Scoreboard & lock screen<br/>⬜ superseded"]
     C --> P2["Phase 2<br/>Hardening<br/>⬜ someday"]
 ```
 
