@@ -194,7 +194,7 @@ pub fn default_rotation() -> Vec<ExerciseDef> {
         lift("bench", 95.0),
         lift("row", 65.0),
         lift("squat", 115.0),
-        lift("shoulder_press", 55.0),
+        lift("overhead", 55.0),
         lift("curl", 25.0),
     ]
 }
@@ -278,5 +278,38 @@ mod tests {
         assert_eq!(store.setting("work_minutes", "6"), "6");
         store.set_setting("work_minutes", "25").unwrap();
         assert_eq!(store.setting("work_minutes", "6"), "25");
+    }
+
+    // Source of truth: vision/src/reps_vision/exercises.py SPECS (rep
+    // exercises) and the jumprope/stretch activities under
+    // vision/src/reps_vision/activities/. Seeded rotation/pool names must
+    // stay in sync with what the vision sidecar actually knows how to
+    // detect, or the app will prescribe an exercise the detector rejects.
+    const KNOWN_VISION_REP_EXERCISES: &[&str] =
+        &["bench", "curl", "overhead", "pullup", "pushup", "row", "squat"];
+    const KNOWN_VISION_CONTINUOUS_EXERCISES: &[&str] = &["jumprope", "stretch"];
+
+    #[test]
+    fn default_rotation_names_match_known_vision_exercises() {
+        for def in default_rotation() {
+            assert!(
+                KNOWN_VISION_REP_EXERCISES.contains(&def.name.as_str()),
+                "default_rotation() seeds {:?}, which is not in the known-vision set {:?}",
+                def.name,
+                KNOWN_VISION_REP_EXERCISES
+            );
+        }
+    }
+
+    #[test]
+    fn default_continuous_pool_names_match_known_vision_exercises() {
+        for def in default_continuous_pool() {
+            assert!(
+                KNOWN_VISION_CONTINUOUS_EXERCISES.contains(&def.name.as_str()),
+                "default_continuous_pool() seeds {:?}, which is not in the known-vision set {:?}",
+                def.name,
+                KNOWN_VISION_CONTINUOUS_EXERCISES
+            );
+        }
     }
 }

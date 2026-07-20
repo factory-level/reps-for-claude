@@ -11,6 +11,7 @@ import base64
 
 import pytest
 
+import reps_vision.stream as stream_module
 from reps_vision.detector import DetectorError
 from reps_vision.stream import run_stream
 
@@ -173,6 +174,45 @@ class TestUnknownExercise:
         with pytest.raises(DetectorError, match="unknown exercise"):
             run_stream(clip, "juggling", events.append, estimator=FakeEstimator([]))
         assert events == []
+
+
+class TestMainArgSeam:
+    """Hermetic check that `main()`'s CLI flags map through to `run_stream`,
+    matching what the Rust sidecar driver (lib.rs `debug_stream_start`)
+    spawns: --video/--exercise/--jpeg-every/--target. No subprocess, no
+    mediapipe: `run_stream` itself is monkeypatched out.
+    """
+
+    def test_flags_map_through_to_run_stream(self, monkeypatch):
+        captured: dict = {}
+
+        def fake_run_stream(video, exercise, sink, **kwargs):
+            captured["video"] = video
+            captured["exercise"] = exercise
+            captured["jpeg_every"] = kwargs.get("jpeg_every")
+            captured["target"] = kwargs.get("target")
+            return 0
+
+        monkeypatch.setattr(stream_module, "run_stream", fake_run_stream)
+
+        code = stream_module.main(
+            [
+                "--video",
+                "clip.mp4",
+                "--exercise",
+                "bench",
+                "--jpeg-every",
+                "5",
+                "--target",
+                "10",
+            ]
+        )
+
+        assert code == 0
+        assert captured["video"] == "clip.mp4"
+        assert captured["exercise"] == "bench"
+        assert captured["jpeg_every"] == 5
+        assert captured["target"] == 10
 
 
 class TestJumpRopePath:

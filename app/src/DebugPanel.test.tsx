@@ -101,6 +101,47 @@ describe("DebugPanel", () => {
     expect(screen.getByText(/Exited/)).toBeInTheDocument();
   });
 
+  it("shows the stderr tail when the sidecar exits with a non-zero code", async () => {
+    render(<DebugPanel />);
+    await screen.findByText("squat");
+    await waitFor(() => expect(listenCallback).toBeDefined());
+
+    emit({
+      event: "exited",
+      code: 1,
+      stderrTail: ["ModuleNotFoundError: No module named 'mediapipe'"],
+    });
+
+    expect(screen.getByText(/Exited \(code 1\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/ModuleNotFoundError: No module named 'mediapipe'/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show a stderr tail when the sidecar exits cleanly", async () => {
+    render(<DebugPanel />);
+    await screen.findByText("squat");
+    await waitFor(() => expect(listenCallback).toBeDefined());
+
+    emit({ event: "exited", code: 0, stderrTail: ["some warning"] });
+
+    expect(screen.queryByText(/some warning/)).not.toBeInTheDocument();
+  });
+
+  it("shows a visible error when starting the debug stream is rejected", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "debug_videos") return Promise.resolve(VIDEOS);
+      if (cmd === "debug_stream_start") return Promise.reject(new Error("spawn failed"));
+      return Promise.resolve(undefined);
+    });
+    render(<DebugPanel />);
+    await screen.findByText("squat");
+
+    fireEvent.click(screen.getByText("Start"));
+
+    await screen.findByText(/Failed to start: Error: spawn failed/);
+  });
+
   it("shows the error readout when the sidecar reports an error", async () => {
     render(<DebugPanel />);
     await screen.findByText("squat");

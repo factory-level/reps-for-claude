@@ -1,7 +1,8 @@
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use engine::clock::{Clock, SystemClock};
@@ -45,12 +46,19 @@ fn dirs_next_data_dir() -> std::path::PathBuf {
 fn persist_and_snapshot(core: &mut Core) -> Snapshot {
     let clock = SystemClock;
     if let Some(rec) = core.session.take_pending_record() {
-        let _ = core.store.record_set(&rec);
+        match core.store.record_set(&rec) {
+            Ok(()) => {}
+            Err(e) => eprintln!("failed to record set: {e}"),
+        }
     }
     let w = core.session.workout();
-    let _ = core
+    match core
         .store
-        .save_pointer_state(w.pointer(), w.capacity_used(), w.capacity_date());
+        .save_pointer_state(w.pointer(), w.capacity_used(), w.capacity_date())
+    {
+        Ok(()) => {}
+        Err(e) => eprintln!("failed to save pointer state: {e}"),
+    }
     core.session.snapshot(clock.now())
 }
 
@@ -103,7 +111,10 @@ fn confirm_weight(app: AppHandle, state: State<SharedCore>, weight: f64) -> Snap
     let clock = SystemClock;
     let mut core = state.lock().unwrap();
     if let Some(rec) = core.session.confirm_weight(weight, &clock.today()) {
-        let _ = core.store.record_set(&rec);
+        match core.store.record_set(&rec) {
+            Ok(()) => {}
+            Err(e) => eprintln!("failed to record set: {e}"),
+        }
         core.session.take_pending_record(); // already persisted
     }
     let snap = persist_and_snapshot(&mut core);
@@ -256,6 +267,8 @@ fn debug_stream_start(
     let mut child = Command::new("uv")
         .args([
             "run",
+            "--extra",
+            "cv",
             "python",
             "-m",
             "reps_vision.stream",
@@ -270,7 +283,7 @@ fn debug_stream_start(
         ])
         .current_dir(&vision_dir)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("failed to spawn debug sidecar: {e}"))?;
 
@@ -278,6 +291,10 @@ fn debug_stream_start(
         .stdout
         .take()
         .ok_or_else(|| "debug sidecar has no stdout pipe".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "debug sidecar has no stderr pipe".to_string())?;
 
     {
         let mut guard = state.lock().unwrap();
@@ -293,6 +310,30 @@ fn debug_stream_start(
             let _ = child.wait();
         }
     }
+
+    // Last ~20 stderr lines from the sidecar, shared between the stderr
+    // reader thread (below) and the stdout reader thread's exit handling, so
+    // a sidecar crash (e.g. missing mediapipe/opencv) surfaces its actual
+    // error instead of just a bare exit code. We report the tail bundled
+    // into the "exited" event (`{"event":"exited","code":...,"stderrTail":[...]}`)
+    // rather than forwarding a live stderr stream, since stderr chatter is
+    // only actionable once the process has stopped.
+    const STDERR_TAIL_LEN: usize = 20;
+    let stderr_tail: Arc<Mutex<VecDeque<String>>> =
+        Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LEN)));
+
+    let stderr_tail_writer = stderr_tail.clone();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            let mut tail = stderr_tail_writer.lock().unwrap();
+            if tail.len() >= STDERR_TAIL_LEN {
+                tail.pop_front();
+            }
+            tail.push_back(line);
+        }
+    });
 
     let handle = app.clone();
     std::thread::spawn(move || {
@@ -330,7 +371,11 @@ fn debug_stream_start(
             .and_then(|status| status.code());
         guard.child = None;
         drop(guard);
-        let _ = handle.emit(DEBUG_STREAM_EVENT, serde_json::json!({"event": "exited", "code": code}));
+        let tail: Vec<String> = stderr_tail.lock().unwrap().iter().cloned().collect();
+        let _ = handle.emit(
+            DEBUG_STREAM_EVENT,
+            serde_json::json!({"event": "exited", "code": code, "stderrTail": tail}),
+        );
     });
 
     Ok(())

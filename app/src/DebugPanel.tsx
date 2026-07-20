@@ -12,7 +12,7 @@ type DebugStreamEvent =
   | { event: "progress"; frame: number; value: number; unit: string; satisfied: boolean }
   | { event: "frame"; frame: number; jpegB64: string }
   | { event: "done"; total: number; satisfied: boolean }
-  | { event: "exited"; code: number | null }
+  | { event: "exited"; code: number | null; stderrTail?: string[] }
   | { event: "error"; message: string };
 
 /** Live detection-debug view: streams a fixture exercise video through the
@@ -30,15 +30,23 @@ export function DebugPanel() {
     satisfied: boolean;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [stderrTail, setStderrTail] = useState<string[] | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     invoke<DebugVideo[]>("debug_videos").then((vs) => {
+      if (cancelled) return;
       setVideos(vs);
       if (vs.length > 0) setSelectedPath(vs[0].path);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     let unlisten: (() => void) | undefined;
     listen<DebugStreamEvent>("debug-stream", (e) => {
       const payload = e.payload;
@@ -67,6 +75,7 @@ export function DebugPanel() {
         case "exited":
           setRunning(false);
           setStatus(`Exited (code ${payload.code ?? "unknown"})`);
+          setStderrTail(payload.code !== 0 ? payload.stderrTail ?? null : null);
           break;
         case "error":
           setRunning(false);
@@ -74,9 +83,16 @@ export function DebugPanel() {
           break;
       }
     }).then((u) => {
+      if (cancelled) {
+        u();
+        return;
+      }
       unlisten = u;
     });
-    return () => unlisten?.();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
 
   const selected = videos.find((v) => v.path === selectedPath);
@@ -87,9 +103,14 @@ export function DebugPanel() {
     setStatus(null);
     setFrameSrc(null);
     setProgress(null);
-    void invoke("debug_stream_start", {
+    setStderrTail(null);
+    setStartError(null);
+    invoke("debug_stream_start", {
       video: selected.path,
       exercise: selected.exercise,
+    }).catch((e) => {
+      setRunning(false);
+      setStartError(`Failed to start: ${String(e)}`);
     });
   }
 
@@ -123,6 +144,10 @@ export function DebugPanel() {
         </p>
       )}
       {status && <p>{status}</p>}
+      {startError && <p role="alert">{startError}</p>}
+      {stderrTail && stderrTail.length > 0 && (
+        <pre>{stderrTail.join("\n")}</pre>
+      )}
     </section>
   );
 }

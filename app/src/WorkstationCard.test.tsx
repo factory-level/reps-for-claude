@@ -65,6 +65,47 @@ describe("WorkstationCard", () => {
     expect(screen.getByText(/4 \/ 10 reps/)).toBeInTheDocument();
   });
 
+  it("shows targetSeconds instead of targetReps for continuous prescriptions when required", () => {
+    render(
+      <WorkstationCard
+        snapshot={{
+          ...base,
+          phase: "EXERCISE_REQUIRED",
+          prescription: {
+            exercise: "jumprope",
+            kind: "CONTINUOUS",
+            targetReps: 0,
+            targetSeconds: 60,
+            defaultWeight: 0,
+          },
+        }}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/0 \/ 60 seconds/)).toBeInTheDocument();
+  });
+
+  it("shows targetSeconds instead of targetReps for continuous prescriptions during the workout", () => {
+    render(
+      <WorkstationCard
+        snapshot={{
+          ...base,
+          phase: "WORKOUT_ACTIVE",
+          prescription: {
+            exercise: "jumprope",
+            kind: "CONTINUOUS",
+            targetReps: 0,
+            targetSeconds: 60,
+            defaultWeight: 0,
+          },
+          progress: { value: 12, unit: "seconds", satisfied: false },
+        }}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/12 \/ 60 seconds/)).toBeInTheDocument();
+  });
+
   it("shows unlocked state", () => {
     render(
       <WorkstationCard snapshot={{ ...base, phase: "UNLOCKED" }} onAction={vi.fn()} />,

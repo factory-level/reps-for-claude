@@ -23,7 +23,10 @@ export function WorkstationCard({
 }) {
   const { phase, prescription, progress } = snapshot;
   const next = snapshot.rotation[snapshot.pointer] ?? "—";
-  const target = prescription?.targetReps ?? 0;
+  const target =
+    prescription?.kind === "CONTINUOUS"
+      ? prescription?.targetSeconds ?? 0
+      : prescription?.targetReps ?? 0;
   const done = progress?.value ?? 0;
 
   if (phase === "CODING") {
