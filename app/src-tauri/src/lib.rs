@@ -216,6 +216,22 @@ type SharedDebugProcess = Mutex<DebugProcess>;
 
 const DEBUG_STREAM_EVENT: &str = "debug-stream";
 const DEBUG_JPEG_EVERY: &str = "5";
+const DEBUG_TARGET: &str = "10"; // matches WorkoutEngine's default_reps
+
+/// Decide whether a just-spawned child belonging to `my_generation` should be
+/// stored in `DebugProcess`, given the guard's generation at the moment the
+/// spawning call re-acquires the lock after `Command::spawn()` returns.
+///
+/// Spawning happens without the lock held (it can block), so a second, later
+/// `debug_stream_start` call can race ahead, kill/replace the tracked child,
+/// and bump the generation before the first call gets back to storing its
+/// own child. If that happened, `current_generation` will have moved past
+/// `my_generation` and the newly spawned child is already orphaned: it must
+/// be killed rather than stored, or it would silently replace (and leak) the
+/// newer call's child handle.
+fn should_store_spawn(current_generation: u64, my_generation: u64) -> bool {
+    current_generation == my_generation
+}
 
 #[tauri::command]
 fn debug_stream_start(
@@ -249,6 +265,8 @@ fn debug_stream_start(
             &exercise,
             "--jpeg-every",
             DEBUG_JPEG_EVERY,
+            "--target",
+            DEBUG_TARGET,
         ])
         .current_dir(&vision_dir)
         .stdout(Stdio::piped())
@@ -263,7 +281,17 @@ fn debug_stream_start(
 
     {
         let mut guard = state.lock().unwrap();
-        guard.child = Some(child);
+        if should_store_spawn(guard.generation, my_generation) {
+            guard.child = Some(child);
+        } else {
+            // Superseded by a newer debug_stream_start call that raced ahead
+            // while spawn() was blocking. That newer call already owns
+            // `guard.child`; kill and reap this now-orphaned child instead of
+            // overwriting the newer handle or leaking the process.
+            drop(guard);
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 
     let handle = app.clone();
@@ -431,5 +459,19 @@ mod debug_view_tests {
         let videos = list_debug_videos(&vision);
         assert_eq!(videos.len(), 1);
         assert_eq!(videos[0].exercise, "squat");
+    }
+
+    #[test]
+    fn should_store_spawn_when_generation_still_current() {
+        // No newer debug_stream_start call raced ahead: store the child.
+        assert!(should_store_spawn(3, 3));
+    }
+
+    #[test]
+    fn should_store_spawn_false_when_superseded_by_newer_generation() {
+        // A newer debug_stream_start call bumped the generation while our
+        // spawn() was blocking: our child is orphaned and must be killed,
+        // never stored (it would clobber the newer call's handle).
+        assert!(!should_store_spawn(4, 3));
     }
 }

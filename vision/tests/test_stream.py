@@ -135,6 +135,37 @@ class TestDoneEvent:
         assert events[-1]["satisfied"] is False
 
 
+class TestTarget:
+    def test_satisfied_false_throughout_when_target_not_given(self, tmp_path):
+        # up -> down -> up -> down -> up: two pushups, no target passed.
+        script = [arm_pose(k) for k in ("up", "down", "up", "down", "up")]
+        clip = write_clip(tmp_path / "clip.avi", frames=len(script))
+        events, _, _ = collect(clip, "pushup", script)
+        assert all(e["satisfied"] is False for e in events if e["event"] in ("progress", "done"))
+
+    def test_satisfied_flips_true_once_count_reaches_target(self, tmp_path):
+        # up -> down -> up -> down -> up: two pushups, target=2.
+        script = [arm_pose(k) for k in ("up", "down", "up", "down", "up")]
+        clip = write_clip(tmp_path / "clip.avi", frames=len(script))
+        events, total, _ = collect(clip, "pushup", script, target=2)
+        assert total == 2
+        progress = [e for e in events if e["event"] == "progress"]
+        # Only satisfied once value has actually reached the target count.
+        assert [p["satisfied"] for p in progress] == [p["value"] >= 2 for p in progress]
+        assert any(p["satisfied"] for p in progress)
+        done = events[-1]
+        assert done["event"] == "done"
+        assert done["satisfied"] is True
+
+    def test_satisfied_false_when_target_not_reached(self, tmp_path):
+        # up -> down: one pushup, target=2 is never reached.
+        script = [arm_pose(k) for k in ("up", "down")]
+        clip = write_clip(tmp_path / "clip.avi", frames=len(script))
+        events, total, _ = collect(clip, "pushup", script, target=2)
+        assert total < 2
+        assert all(e["satisfied"] is False for e in events if e["event"] in ("progress", "done"))
+
+
 class TestUnknownExercise:
     def test_raises_before_emitting_events(self, tmp_path):
         clip = write_clip(tmp_path / "clip.avi", frames=1)

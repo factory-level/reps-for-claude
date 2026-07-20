@@ -101,6 +101,16 @@ describe("DebugPanel", () => {
     expect(screen.getByText(/Exited/)).toBeInTheDocument();
   });
 
+  it("shows the error readout when the sidecar reports an error", async () => {
+    render(<DebugPanel />);
+    await screen.findByText("squat");
+    await waitFor(() => expect(listenCallback).toBeDefined());
+
+    emit({ event: "error", message: "boom" });
+
+    expect(screen.getByText(/Error: boom/)).toBeInTheDocument();
+  });
+
   it("stops the stream via debug_stream_stop", async () => {
     render(<DebugPanel />);
     await screen.findByText("squat");

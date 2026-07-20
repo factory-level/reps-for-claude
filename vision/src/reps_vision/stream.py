@@ -45,6 +45,7 @@ def run_stream(
     estimator: object | None = None,
     jpeg_every: int = 2,
     jpeg_width: int = 640,
+    target: int | None = None,
 ) -> int:
     """Stream one video through the detector, emitting protocol events to `sink`.
 
@@ -52,6 +53,12 @@ def run_stream(
     its own frame loop feeding JumpRopeActivity. Returns the final count
     (reps, or whole seconds for jumprope) — the same value as the "done"
     event's "total".
+
+    `target`, when given, makes "satisfied" on rep-exercise progress/done
+    events meaningful: `satisfied = count >= target`. Jumprope already
+    computes satisfied from its own fixed time target regardless of this
+    parameter. Default `None` keeps the previous behavior (`satisfied` always
+    False for reps).
     """
     if exercise != "jumprope":
         try:
@@ -68,7 +75,7 @@ def run_stream(
             video, sink, estimator_factory, fps, jpeg_every, jpeg_width
         )
     return _run_reps(
-        video, exercise, sink, estimator_factory, jpeg_every, jpeg_width
+        video, exercise, sink, estimator_factory, jpeg_every, jpeg_width, target
     )
 
 
@@ -105,6 +112,7 @@ def _run_reps(
     estimator_factory,
     jpeg_every: int,
     jpeg_width: int,
+    target: int | None,
 ) -> int:
     kwargs = {} if estimator_factory is None else {"estimator_factory": estimator_factory}
     counter = VideoRepCounter(video, annotate=True, **kwargs)
@@ -117,7 +125,7 @@ def _run_reps(
                 "frame": frame_idx,
                 "value": count,
                 "unit": "reps",
-                "satisfied": False,
+                "satisfied": target is not None and count >= target,
             }
         )
         if frame_idx % jpeg_every == 0:
@@ -134,7 +142,8 @@ def _run_reps(
     on_frame.next_idx = 0
 
     total = counter.run(exercise, lambda n: None, on_frame=on_frame)
-    sink({"event": "done", "total": total, "satisfied": False})
+    satisfied = target is not None and total >= target
+    sink({"event": "done", "total": total, "satisfied": satisfied})
     return total
 
 
@@ -206,6 +215,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--exercise", required=True, help="exercise name, or 'jumprope'")
     parser.add_argument("--jpeg-every", type=int, default=2)
     parser.add_argument("--jpeg-width", type=int, default=640)
+    parser.add_argument(
+        "--target",
+        type=int,
+        default=None,
+        help="rep count that marks progress/done as satisfied (rep exercises only)",
+    )
     args = parser.parse_args(argv)
 
     def sink(event: dict) -> None:
@@ -218,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             sink,
             jpeg_every=args.jpeg_every,
             jpeg_width=args.jpeg_width,
+            target=args.target,
         )
     except DetectorError as e:
         sink({"event": "error", "message": str(e)})
