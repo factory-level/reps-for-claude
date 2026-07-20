@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useState } from "react";
 import "./App.css";
+import { DebugPanel } from "./DebugPanel";
 import type { Action } from "./WorkstationCard";
 import { WorkstationCard } from "./WorkstationCard";
 import { useSnapshot } from "./useSnapshot";
@@ -15,6 +17,7 @@ const COMMANDS: Record<Action, (value?: number) => Promise<unknown>> = {
 
 export default function App() {
   const snapshot = useSnapshot();
+  const [showDebug, setShowDebug] = useState(false);
   if (!snapshot) return <p>Connecting…</p>;
   return (
     <main className="container">
@@ -22,6 +25,10 @@ export default function App() {
         snapshot={snapshot}
         onAction={(a, value) => void COMMANDS[a](value)}
       />
+      <button onClick={() => setShowDebug((v) => !v)}>
+        {showDebug ? "Hide" : "Show"} Detection Debug
+      </button>
+      {showDebug && <DebugPanel />}
     </main>
   );
 }
