@@ -1,4 +1,4 @@
-from reps_for_claude.activities.stretch import StretchActivity
+from reps_vision.activities.stretch import StretchActivity
 
 
 def test_hold_accumulates_from_first_update():

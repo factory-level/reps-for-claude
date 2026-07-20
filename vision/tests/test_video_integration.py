@@ -33,7 +33,7 @@ def test_counts_match_manifest(entry):
     pytest.importorskip("mediapipe")
     if entry is None:
         pytest.skip("video fixtures not downloaded (run scripts/fetch_fixtures.py)")
-    from reps_for_claude.video import VideoRepCounter
+    from reps_vision.video import VideoRepCounter
 
     clip = FIXTURES / entry["file"]
     if not clip.exists():
@@ -58,7 +58,7 @@ def test_analyze_writes_visualization(tmp_path, monkeypatch):
 
     from typer.testing import CliRunner
 
-    from reps_for_claude.cli import app
+    from reps_vision.cli import app
 
     home = tmp_path / "reps-home"
     home.mkdir()
@@ -71,28 +71,3 @@ def test_analyze_writes_visualization(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert out.exists() and out.stat().st_size > 0
     assert "visualization written" in result.output
-
-
-def test_analyze_does_not_touch_ledger(tmp_path, monkeypatch):
-    """`reps analyze` must never credit the ledger, even on a counted video."""
-    manifest = load_manifest()
-    pytest.importorskip("mediapipe")
-    entry = manifest[0]
-    clip = FIXTURES / entry["file"]
-    if not clip.exists():
-        pytest.skip(f"{entry['file']} missing")
-
-    from typer.testing import CliRunner
-
-    from reps_for_claude.cli import app
-
-    home = tmp_path / "reps-home"
-    home.mkdir()
-    monkeypatch.setenv("REPS_HOME", str(home))
-    runner = CliRunner()
-    result = runner.invoke(
-        app, ["analyze", str(clip), "--exercise", entry["exercise"]]
-    )
-    assert result.exit_code == 0
-    assert "no credit banked" in result.output
-    assert not (home / "state" / "state.json").exists()

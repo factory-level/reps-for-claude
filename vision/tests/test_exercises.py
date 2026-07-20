@@ -1,6 +1,6 @@
 import pytest
 
-from reps_for_claude.exercises import SPECS, ExerciseSpec, get_spec
+from reps_vision.exercises import SPECS, ExerciseSpec, get_spec
 
 ALL_EXERCISES = ["pushup", "squat", "curl", "pullup", "bench", "overhead", "row"]
 VALID_JOINTS = {"shoulder", "elbow", "wrist", "hip", "knee", "ankle"}

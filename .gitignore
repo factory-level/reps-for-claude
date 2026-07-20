@@ -8,5 +8,5 @@ uv.lock
 
 # Downloaded video fixtures are reproducible via scripts/fetch_fixtures.py.
 # The small CC BY squat clip is committed as an in-repo sample; the rest aren't.
-tests/fixtures/videos/*
-!tests/fixtures/videos/squat_demo.webm
+vision/tests/fixtures/videos/*
+!vision/tests/fixtures/videos/squat_demo.webm

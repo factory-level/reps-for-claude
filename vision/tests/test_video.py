@@ -7,8 +7,8 @@ through VideoRepCounter without any real pose estimation.
 
 import pytest
 
-from reps_for_claude.detector import DetectorError
-from reps_for_claude.video import VideoRepCounter
+from reps_vision.detector import DetectorError
+from reps_vision.video import VideoRepCounter
 
 cv2 = pytest.importorskip("cv2")
 np = pytest.importorskip("numpy")

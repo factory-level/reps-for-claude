@@ -2,7 +2,7 @@ import io
 
 import pytest
 
-from reps_for_claude.detector import (
+from reps_vision.detector import (
     DetectorError,
     KeyboardDetector,
     StubDetector,
@@ -46,7 +46,7 @@ class TestRegistry:
         assert isinstance(get_detector("keyboard"), KeyboardDetector)
 
     def test_mediapipe_returns_video_counter(self):
-        from reps_for_claude.video import VideoRepCounter
+        from reps_vision.video import VideoRepCounter
 
         det = get_detector("mediapipe", camera_index=2)
         assert isinstance(det, VideoRepCounter)

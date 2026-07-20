@@ -1,5 +1,5 @@
-from reps_for_claude.activities.base import Progress
-from reps_for_claude.activities.lift import LiftActivity
+from reps_vision.activities.base import Progress
+from reps_vision.activities.lift import LiftActivity
 
 
 def _pose(knee_angle_deg: float):

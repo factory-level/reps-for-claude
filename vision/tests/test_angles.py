@@ -1,6 +1,6 @@
 import pytest
 
-from reps_for_claude.angles import RepStateMachine, angle
+from reps_vision.angles import RepStateMachine, angle
 
 
 class TestAngle:

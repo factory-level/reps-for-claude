@@ -13,7 +13,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from .config import cache_dir
+from .paths import cache_dir
 from .detector import DetectorError
 from .exercises import Landmarks
 

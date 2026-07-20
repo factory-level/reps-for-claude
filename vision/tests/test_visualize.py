@@ -2,8 +2,8 @@
 
 import pytest
 
-from reps_for_claude.exercises import get_spec
-from reps_for_claude.visualize import POSE_CONNECTIONS, draw_overlay
+from reps_vision.exercises import get_spec
+from reps_vision.visualize import POSE_CONNECTIONS, draw_overlay
 
 np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")

@@ -1,4 +1,4 @@
-from reps_for_claude.activities.jumprope import JumpRopeActivity
+from reps_vision.activities.jumprope import JumpRopeActivity
 
 
 def _hips(y: float):
