@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from ..angles import RepStateMachine
-from ..exercises import Landmarks, get_spec
+from ..exercises import ExerciseSpec, Landmarks, get_spec
 from .base import Progress
 
 
 class LiftActivity:
-    def __init__(self, exercise: str, target_reps: int) -> None:
-        self._spec = get_spec(exercise)
+    def __init__(self, exercise: str | ExerciseSpec, target_reps: int) -> None:
+        self._spec = exercise if isinstance(exercise, ExerciseSpec) else get_spec(exercise)
         self._machine = RepStateMachine(self._spec.down_below, self._spec.up_above)
         self._target = target_reps
         self._count = 0

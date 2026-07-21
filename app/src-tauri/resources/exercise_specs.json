@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "model": {
+    "plugin": "reps_vision",
+    "name": "mediapipe-pose-landmarker",
+    "variant": "lite"
+  },
+  "exercises": {
+    "pushup": {
+      "activity": "lift",
+      "exercise": { "name": "pushup", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 95.0, "upAbove": 155.0, "minVisibility": 0.5 }
+    },
+    "bench": {
+      "activity": "lift",
+      "exercise": { "name": "bench", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 95.0, "upAbove": 150.0, "minVisibility": 0.5 }
+    },
+    "overhead": {
+      "activity": "lift",
+      "exercise": { "name": "overhead", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 95.0, "upAbove": 155.0, "minVisibility": 0.5 }
+    },
+    "curl": {
+      "activity": "lift",
+      "exercise": { "name": "curl", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 60.0, "upAbove": 150.0, "minVisibility": 0.5 }
+    },
+    "pullup": {
+      "activity": "lift",
+      "exercise": { "name": "pullup", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 75.0, "upAbove": 160.0, "minVisibility": 0.5 }
+    },
+    "row": {
+      "activity": "lift",
+      "exercise": { "name": "row", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 90.0, "upAbove": 150.0, "minVisibility": 0.5 }
+    },
+    "squat": {
+      "activity": "lift",
+      "exercise": { "name": "squat", "joints": ["hip", "knee", "ankle"], "downBelow": 110.0, "upAbove": 160.0, "minVisibility": 0.5 }
+    },
+    "jumprope": {
+      "activity": "jumprope",
+      "targetSeconds": 60.0,
+      "bounceThreshold": 0.015,
+      "resetAfter": 2.0
+    },
+    "stretch": {
+      "activity": "stretch",
+      "holdSeconds": 30.0
+    }
+  }
+}

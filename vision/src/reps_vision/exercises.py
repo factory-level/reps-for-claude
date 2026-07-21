@@ -24,6 +24,24 @@ class ExerciseSpec:
     up_above: float
     min_visibility: float = 0.5
 
+    @classmethod
+    def from_config(cls, config: dict) -> "ExerciseSpec":
+        """Build a spec from consumer-shipped configuration (camelCase keys).
+
+        This is the config-driven path: the engine never needs an exercise to
+        exist in the SPECS registry.
+        """
+        joints = tuple(config["joints"])
+        if len(joints) != 3:
+            raise ValueError(f"joints must name exactly three landmarks, got: {joints}")
+        return cls(
+            name=str(config.get("name", "custom")),
+            joints=joints,  # type: ignore[arg-type]
+            down_below=float(config["downBelow"]),
+            up_above=float(config["upAbove"]),
+            min_visibility=float(config.get("minVisibility", 0.5)),
+        )
+
     def measured_joints(self, landmarks: Landmarks) -> tuple[str, str, str] | None:
         """The three landmark names on the most visible body side, or None.
 
