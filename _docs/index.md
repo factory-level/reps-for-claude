@@ -54,6 +54,7 @@ The project is being built in three plans. Be honest with yourself about which p
 | [Counting your reps](concepts/detection.md) | How a webcam frame becomes a counted rep. |
 | [Remembering your progress](concepts/storage.md) | The three small files on disk and why they never lose your data. |
 | **Reference** | |
+| [Adding and tuning exercises](reference/adding-exercises.md) | How to define a new pose-counted exercise and calibrate it with your phone. |
 | [Configuration](reference/config.md) | Every setting in `config.toml`. |
 | [CLI commands](reference/cli.md) | Every `reps` command, including the legacy ones. |
 | [Module map](reference/modules.md) | What each Python file does. |
