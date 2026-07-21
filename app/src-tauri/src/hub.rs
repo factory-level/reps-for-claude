@@ -69,6 +69,46 @@ pub fn metric_config_for(
     Some((plugin_id, config))
 }
 
+/// A camera-set declaration from exercise specs: registry entries to
+/// register, the set to fuse across, and the fusion policy.
+pub struct CameraSet {
+    pub registry: Vec<serde_json::Value>,
+    pub cameras: Vec<String>,
+}
+
+/// When the specs declare a camera set, strip the injected single-camera
+/// object, put the fusion policy into the config, and return the set.
+pub fn apply_camera_set(
+    specs: &serde_json::Value,
+    config: &mut serde_json::Value,
+) -> Option<CameraSet> {
+    let block = specs.get("cameras")?;
+    let cameras: Vec<String> = block
+        .get("set")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    if cameras.len() < 2 {
+        return None;
+    }
+    let registry = block
+        .get("registry")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let object = config.as_object_mut()?;
+    object.remove("camera");
+    object.insert(
+        "fusion".into(),
+        block
+            .get("fusion")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"policy": "best", "scoreField": "visibility"})),
+    );
+    Some(CameraSet { registry, cameras })
+}
+
 /// Start the supervisor in the background and pump its events into the
 /// session. No-op when REPS_HUB_DISABLED is set (dev without a hub).
 pub fn start(app: AppHandle) {
@@ -164,7 +204,7 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
                 return;
             }
         };
-        let Some((plugin_id, config)) =
+        let Some((plugin_id, mut config)) =
             metric_config_for(&specs, &exercise, target_reps, target_seconds)
         else {
             eprintln!("hub: no spec for exercise {exercise}; honor mode");
@@ -174,13 +214,22 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
             );
             return;
         };
+        let camera_set = apply_camera_set(&specs, &mut config);
         let state = app.state::<SharedHub>();
         let mut guard = state.lock().unwrap();
         match guard.as_mut() {
             Some(hub) => {
+                if let Some(set) = &camera_set {
+                    for camera in &set.registry {
+                        if let Err(err) = hub.add_camera(camera) {
+                            eprintln!("hub: add_camera failed: {err}");
+                        }
+                    }
+                }
                 let request = EnableMetric {
                     metric_id: WORKOUT_METRIC.into(),
                     plugin_id,
+                    cameras: camera_set.map(|set| set.cameras),
                     config,
                 };
                 if let Err(err) = hub.enable_metric(&request) {
@@ -255,6 +304,39 @@ mod tests {
         assert_eq!(config["exercise"]["downBelow"], 110.0);
         assert_eq!(config["targetReps"], 12);
         assert_eq!(config["camera"]["source"], "index");
+        assert_eq!(config["camera"]["id"], "webcam");
+    }
+
+    #[test]
+    fn camera_set_spec_overrides_single_camera_config() {
+        let specs = serde_json::json!({
+            "model": {"plugin": "reps_vision"},
+            "cameras": {
+                "registry": [
+                    {"cameraId": "front", "kind": "usb", "source": "v4l2:///dev/video0"},
+                    {"cameraId": "side", "kind": "usb", "source": "v4l2:///dev/video1"}
+                ],
+                "set": ["front", "side"],
+                "fusion": {"policy": "best", "scoreField": "visibility"}
+            },
+            "exercises": {"squat": {"activity": "lift",
+                "exercise": {"name": "squat", "joints": ["hip","knee","ankle"],
+                              "downBelow": 110.0, "upAbove": 160.0}}}
+        });
+        let (_, mut config) = metric_config_for(&specs, "squat", 5, 0.0).unwrap();
+        let set = apply_camera_set(&specs, &mut config).unwrap();
+        assert_eq!(set.cameras, vec!["front", "side"]);
+        assert_eq!(set.registry.len(), 2);
+        // exclusive with the injected single-camera object
+        assert!(config.get("camera").is_none());
+        assert_eq!(config["fusion"]["scoreField"], "visibility");
+    }
+
+    #[test]
+    fn no_camera_set_leaves_single_camera_config_alone() {
+        let specs = load_exercise_specs().unwrap();
+        let (_, mut config) = metric_config_for(&specs, "squat", 5, 0.0).unwrap();
+        assert!(apply_camera_set(&specs, &mut config).is_none());
         assert_eq!(config["camera"]["id"], "webcam");
     }
 

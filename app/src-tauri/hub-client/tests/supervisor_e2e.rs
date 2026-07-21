@@ -28,6 +28,7 @@ fn supervisor_runs_a_real_workout_metric_over_a_fixture() {
         .enable_metric(&EnableMetric {
             metric_id: "e2e".into(),
             plugin_id: "reps_vision".into(),
+            cameras: None,
             config: serde_json::json!({
                 "activity": "lift",
                 "targetReps": 2,

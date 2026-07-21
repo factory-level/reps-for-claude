@@ -103,6 +103,7 @@ fn enable_metric_round_trip_and_stream_events() {
         .enable_metric(&EnableMetric {
             metric_id: "workout".into(),
             plugin_id: "reps_vision".into(),
+            cameras: None,
             config: serde_json::json!({"targetReps": 2}),
         })
         .unwrap();

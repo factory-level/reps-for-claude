@@ -135,3 +135,38 @@ detection matches reality.
   re-aim the camera).
 - Tune with the clothes and lighting you actually train in; baggy layers
   move thresholds by 10° or more.
+
+## Two-camera fusion (optional)
+
+With two cameras the hub can track a set from both angles and elect the
+best view per moment (occlusion-proof rep counting). Add a top-level
+`cameras` block to `exercise_specs.json`:
+
+```json
+"cameras": {
+  "registry": [
+    { "cameraId": "front", "kind": "usb", "source": "v4l2:///dev/video0" },
+    { "cameraId": "side",  "kind": "usb", "source": "v4l2:///dev/video1" }
+  ],
+  "set": ["front", "side"],
+  "fusion": { "policy": "best", "scoreField": "visibility" }
+}
+```
+
+On session start the app registers the cameras, enables the workout
+metric across the set, and the hub fuses the streams: only the elected
+primary's landmarks/events reach the app (`fused: true`,
+`primary_camera_changed` on election flips). Per-camera tuning deltas
+(e.g. a different `downBelow` for the side angle) are applied from the
+hub's tuning app overlay editor.
+
+Without the block everything behaves exactly as single-camera. Verify a
+two-camera setup with:
+
+```sh
+node scripts/e2e-two-camera.mjs
+```
+
+It generates an occluded "front" fixture, streams both through
+MediaPipe, and asserts the election fails over and the rep count
+survives (requires the sibling `usb-mcp-hub` checkout; hub node >= 22.5).

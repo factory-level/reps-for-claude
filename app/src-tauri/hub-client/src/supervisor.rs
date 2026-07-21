@@ -311,6 +311,11 @@ impl VisionHub for HubSupervisor {
         self.with_client(move |client| client.disable_metric(&id))
     }
 
+    fn add_camera(&mut self, camera: &serde_json::Value) -> Result<(), HubError> {
+        let camera = camera.clone();
+        self.with_client(move |client| client.add_camera(&camera))
+    }
+
     fn update_metric_config(
         &mut self,
         metric_id: &str,

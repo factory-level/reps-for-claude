@@ -168,7 +168,7 @@ def _cv2_capture(camera: dict):
 
     source = camera.get("source", "index")
     value = camera.get("value", 0)
-    capture = cv2.VideoCapture(value if source == "file" else int(value))
+    capture = cv2.VideoCapture(value if source in ("file", "uri") else int(value))
     if not capture.isOpened():
         raise RuntimeError(f"cannot open camera: {camera}")
     if "width" in camera:
