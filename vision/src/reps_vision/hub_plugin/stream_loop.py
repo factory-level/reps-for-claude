@@ -31,10 +31,12 @@ class StreamLoop:
     def _run(self) -> None:
         last_value = 0.0
         was_satisfied = False
+        source_ended = False
         try:
             while not self._stop.is_set():
                 ok, frame = self._capture.read()
                 if not ok:
+                    source_ended = True
                     break
                 ts_us = time.time_ns() // 1000
                 landmarks = self._estimator.landmarks(frame)
@@ -71,6 +73,10 @@ class StreamLoop:
                 if progress.satisfied and not was_satisfied:
                     self._emit("event", {"type": "target_reached", "value": progress.value})
                 was_satisfied = progress.satisfied
+            if source_ended:
+                # File finished or camera died — consumers must not wait
+                # forever for frames that will never come.
+                self._emit("event", {"type": "stream_ended", "finalValue": last_value})
         finally:
             self._capture.release()
             close = getattr(self._estimator, "close", None)

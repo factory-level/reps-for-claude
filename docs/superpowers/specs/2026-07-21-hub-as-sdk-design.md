@@ -205,3 +205,36 @@ lock fires
 The lock driver itself remains a separate reps-for-claude milestone (per the
 Tauri rewrite spec); this migration only requires the vision trait to be
 ready for it.
+
+## Implementation notes (2026-07-21, migration executed)
+
+Deviations and refinements recorded as built:
+
+- **Observation taxonomy:** every plugin observation is declared in
+  `observationSchema` as an `event` (`rep_completed`, `target_reached`,
+  `stream_ended`), a `duration` (time spent doing the action), or a min/max
+  `range` (joint angle 0–180). Push envelopes carry `cameraId` — metrics,
+  events, and snapshot actions are addressable per camera.
+- **`SPECS` retained as library data:** the plugin itself is fully
+  config-driven (`ExerciseSpec.from_config`; nothing in `hub_plugin` reads
+  `SPECS`), but the registry stays for the remaining library modules
+  (`video.py`, `detector.py`) and their tests. It no longer feeds the
+  product path — `app/src-tauri/resources/exercise_specs.json` (which also
+  declares the model reps-for-claude uses) is the source of truth.
+- **DebugPanel / `stream.py` deferred, not deleted:** the hub landmark
+  stream carries no JPEG frames, so migrating the video-debug view onto it
+  would regress its core value (annotated video playback). Both stay as
+  dev-only tooling until the hub grows frame streaming.
+- **Bundle layout:** `scripts/bundle-hub.sh` stages
+  `resources/hub-bundle/{hubd.mjs, public/, vision/}` (esbuild single file;
+  `HUB_VISION_DIR`/`HUB_PUBLIC_DIR`/`HUB_CERT_DIR` env overrides) and pins
+  `resources/hub-manifest.json` (hub commit, apiVersion, artifact +
+  transcript sha256s). The reps plugin ships from this repo's `vision/src`
+  via `HUB_PLUGIN_ARGS`; the Python env is provisioned by uv on first run.
+  The staged bundle is gitignored; the manifest is committed.
+- **Verification results:** full-pipeline e2e (`scripts/e2e-latency.mjs`)
+  counts the squat fixture's 2 reps through real MediaPipe with landmark
+  latency p50 ≈ 17 ms / p95 ≈ 20 ms — inside the 50 ms budget. Camera
+  gating is verifiable with `usb-mcp-hub/scripts/verify-camera-gating.sh`;
+  the remaining manual checks live in
+  `docs/checklists/e2e-target-machine.md`.

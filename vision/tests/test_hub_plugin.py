@@ -124,6 +124,8 @@ def test_stream_emits_landmarks_progress_and_rep_events():
     rep_events = [e for e in events if e["type"] == "rep_completed"]
     assert [e["count"] for e in rep_events] == [1, 2]
     assert any(e["type"] == "target_reached" for e in events)
+    # the capture ran out of frames: consumers are told the stream ended
+    assert events[-1]["type"] == "stream_ended"
     progress = [d for s, d in frames if s == "progress"]
     assert progress[-1]["value"] == 2.0
     assert progress[-1]["satisfied"] is True

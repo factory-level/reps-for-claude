@@ -25,6 +25,37 @@ pub struct HubSupervisorConfig {
 }
 
 impl HubSupervisorConfig {
+    /// Production: the staged bundle under the app's resources dir
+    /// (hub-bundle/hubd.mjs + public/ + vision/), reps plugin loaded from
+    /// `plugin_src` (the shipped reps_vision sources).
+    pub fn bundled(resources_dir: &std::path::Path, plugin_src: &std::path::Path) -> Self {
+        let bundle = resources_dir.join("hub-bundle");
+        HubSupervisorConfig {
+            hub_dir: bundle.clone(),
+            command: vec![
+                "node".into(),
+                bundle.join("hubd.mjs").display().to_string(),
+            ],
+            env: vec![
+                (
+                    "HUB_VISION_DIR".into(),
+                    bundle.join("vision").display().to_string(),
+                ),
+                (
+                    "HUB_PUBLIC_DIR".into(),
+                    bundle.join("public").display().to_string(),
+                ),
+                (
+                    "HUB_PLUGIN_ARGS".into(),
+                    format!(
+                        "--plugin-path {} --plugin reps_vision.hub_plugin.plugin:RepsVisionPlugin",
+                        plugin_src.display()
+                    ),
+                ),
+            ],
+        }
+    }
+
     /// Dev default: sibling checkout via $HUB_DIR, reps plugin loaded from
     /// this repo's vision/src.
     pub fn dev(repo_root: &std::path::Path) -> Self {

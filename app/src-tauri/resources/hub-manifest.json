@@ -1,0 +1,21 @@
+{
+  "hubCommit": "c16afa13e3fa83b1eeea40665a30c49385c0df6d",
+  "apiVersion": "1.0",
+  "artifactSha256s": {
+    "hubd.mjs": "33376f8c2a19ccc4344546886b8958ef795bccbfd92712e729ab2bcfa108cb6c",
+    "public/app.js": "1bec477b063d139e8ada9c26efc7eb9c371e275580653b27e28410ccd4195e46",
+    "public/index.html": "a5614cfa2cb8f50a1ed3df63b9c2d63974b41add7487e960c2cc66dbaa0abd55",
+    "vision/host/contract.py": "8da77eb8acabb730f2837c4d0aba5f8ac2525fdfa4fcf074c22bb6c4478c4d54",
+    "vision/host/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/host/registry.py": "fef8640920985400a19e73a2762b19775553eb546c81991219c1046f6bb47d43",
+    "vision/host/server.py": "b4aa272e2c4bf4749e89258d356666cd7cb72a223535f81da6a37012bcbfcd37",
+    "vision/plugins/frame_stats/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/plugins/frame_stats/plugin.py": "c4913266f56b55910d9c03e572a0750d6b6ac80d8a223b5c7fdc83af8293d876",
+    "vision/plugins/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/pyproject.toml": "04b101e73cbf0d5caeaf49937b147a90e0462ed61c0cc571290704c4e593c243",
+    "vision/uv.lock": "e16c725a233a2a432ade4c26da4b8fdc57f8f1357c7ec52312d3c9fe5663df30"
+  },
+  "transcriptSha256s": {
+    "workout-session.json": "cac0e93533061780ef103cbb2e339d876533fa9e83c17d4f2fe77243e83a107b"
+  }
+}
