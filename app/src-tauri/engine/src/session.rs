@@ -13,6 +13,7 @@ pub struct Session {
     prescription: Option<Prescription>,
     progress: Option<Progress>,
     pending_record: Option<SetRecord>,
+    verified: bool,
 }
 
 impl Session {
@@ -24,7 +25,14 @@ impl Session {
             prescription: None,
             progress: None,
             pending_record: None,
+            verified: true,
         }
+    }
+
+    /// Honor-mode: the set completing now was not camera-verified. Resets
+    /// once the set's record is built.
+    pub fn mark_unverified(&mut self) {
+        self.verified = false;
     }
 
     pub fn start(&mut self, now: f64, _today: &str) {
@@ -69,8 +77,9 @@ impl Session {
                     reps: 0,
                     seconds: rx.target_seconds,
                     weight: 0.0,
-                    verified: true,
+                    verified: self.verified,
                 });
+                self.verified = true;
                 let date = self.workout.capacity_date().to_string();
                 self.workout.complete(&date);
                 self.phase = Phase::Unlocked;
@@ -91,8 +100,9 @@ impl Session {
             reps: rx.target_reps,
             seconds: 0.0,
             weight,
-            verified: true,
+            verified: self.verified,
         };
+        self.verified = true;
         self.workout.complete(today);
         self.pending_record = Some(record.clone());
         self.phase = Phase::Unlocked;
@@ -233,5 +243,36 @@ mod tests {
         s.tick(360.0, "2026-07-19");
         // long workout: coding timer must not be running
         assert_eq!(s.snapshot(10_000.0).remaining_seconds, 360.0);
+    }
+
+    #[test]
+    fn honor_mode_records_are_unverified() {
+        let mut s = session();
+        s.start(0.0, "2026-07-19");
+        s.tick(360.0, "2026-07-19");
+        s.begin_workout();
+        s.mark_unverified(); // camera failed: user pressed Done
+        s.report_progress(done("reps", 10.0));
+        let rec = s.confirm_weight(45.0, "2026-07-19").unwrap();
+        assert!(!rec.verified);
+    }
+
+    #[test]
+    fn verification_resets_after_each_set() {
+        let mut s = session();
+        s.start(0.0, "2026-07-19");
+        s.tick(360.0, "2026-07-19");
+        s.begin_workout();
+        s.mark_unverified();
+        s.report_progress(done("reps", 10.0));
+        s.confirm_weight(45.0, "2026-07-19").unwrap();
+        s.take_pending_record();
+        s.resume_coding(361.0);
+        // next workout is verified again by default
+        s.tick(721.0, "2026-07-19");
+        s.begin_workout();
+        s.report_progress(done("reps", 10.0));
+        let rec = s.confirm_weight(50.0, "2026-07-19").unwrap();
+        assert!(rec.verified);
     }
 }

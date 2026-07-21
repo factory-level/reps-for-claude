@@ -14,12 +14,14 @@ use engine::workout::WorkoutEngine;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
-struct Core {
-    session: Session,
+mod hub;
+
+pub(crate) struct Core {
+    pub(crate) session: Session,
     store: Store,
 }
 
-type SharedCore = Mutex<Core>;
+pub(crate) type SharedCore = Mutex<Core>;
 
 fn build_core() -> Core {
     let dir = dirs_next_data_dir();
@@ -43,7 +45,7 @@ fn dirs_next_data_dir() -> std::path::PathBuf {
         })
 }
 
-fn persist_and_snapshot(core: &mut Core) -> Snapshot {
+pub(crate) fn persist_and_snapshot(core: &mut Core) -> Snapshot {
     let clock = SystemClock;
     if let Some(rec) = core.session.take_pending_record() {
         match core.store.record_set(&rec) {
@@ -87,8 +89,20 @@ fn begin_workout(app: AppHandle, state: State<SharedCore>) -> Snapshot {
     let mut core = state.lock().unwrap();
     core.session.begin_workout();
     let snap = persist_and_snapshot(&mut core);
+    drop(core);
+    // Camera on only while working out: enable the metric for this
+    // prescription (fire-and-forget; failure surfaces honor mode).
+    if let Some(rx) = snap.prescription.as_ref() {
+        hub::enable_metric_async(&app, rx.exercise.clone(), rx.target_reps, rx.target_seconds);
+    }
     emit_snapshot(&app, &snap);
     snap
+}
+
+/// Honor-mode completion: camera path failed, the user attests the set.
+#[tauri::command]
+fn honor_complete(app: AppHandle) -> Snapshot {
+    hub::honor_complete(&app)
 }
 
 #[tauri::command]
@@ -128,6 +142,10 @@ fn resume_coding(app: AppHandle, state: State<SharedCore>) -> Snapshot {
     let mut core = state.lock().unwrap();
     core.session.resume_coding(clock.now());
     let snap = persist_and_snapshot(&mut core);
+    drop(core);
+    // Belt and braces: the metric is disabled on satisfaction already, but
+    // an aborted workout must also release the camera.
+    hub::disable_metric_async(&app);
     emit_snapshot(&app, &snap);
     snap
 }
@@ -398,6 +416,7 @@ pub fn run() {
             generation: 0,
             child: None,
         }) as SharedDebugProcess)
+        .manage(Mutex::new(None) as hub::SharedHub)
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             start_session,
@@ -405,11 +424,13 @@ pub fn run() {
             simulate_progress,
             confirm_weight,
             resume_coding,
+            honor_complete,
             debug_videos,
             debug_stream_start,
             debug_stream_stop
         ])
         .setup(|app| {
+            hub::start(app.handle().clone());
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(1));

@@ -13,7 +13,7 @@ pub mod supervisor;
 
 pub use client::HubClient;
 pub use fake::FakeHub;
-pub use supervisor::HubSupervisor;
+pub use supervisor::{HubSupervisor, HubSupervisorConfig};
 
 pub const SUPPORTED_API_MAJOR: &str = "1";
 

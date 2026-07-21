@@ -64,6 +64,7 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "engine",
+ "hub-client",
  "serde",
  "serde_json",
  "tauri",
