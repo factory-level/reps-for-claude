@@ -1,21 +1,35 @@
 {
-  "hubCommit": "c16afa13e3fa83b1eeea40665a30c49385c0df6d",
-  "apiVersion": "1.0",
+  "hubCommit": "4bc25d34aa3017c4dce128e8624193d8e3f23df8",
+  "apiVersion": "1.3",
+  "nodeEngine": ">=22.5",
   "artifactSha256s": {
-    "hubd.mjs": "33376f8c2a19ccc4344546886b8958ef795bccbfd92712e729ab2bcfa108cb6c",
-    "public/app.js": "1bec477b063d139e8ada9c26efc7eb9c371e275580653b27e28410ccd4195e46",
-    "public/index.html": "a5614cfa2cb8f50a1ed3df63b9c2d63974b41add7487e960c2cc66dbaa0abd55",
-    "vision/host/contract.py": "8da77eb8acabb730f2837c4d0aba5f8ac2525fdfa4fcf074c22bb6c4478c4d54",
+    "hubd.mjs": "1da9aaba73018ce4d8cbb541ccb4a995c6d277210b4e998054b977fb31aa6ecd",
+    "public/app.js": "8e4eb0da8f21fd8c400a85a1b21bcec40fead282739fac1ab1435ec28f4fcf7a",
+    "public/index.html": "d807d13065b6a157b7f8ca780f94e23ac7f2628674d687ede38cb0f81e86e519",
+    "vision/host/contract.py": "e3ae4819d40b249a97266abebf7aef58e94afc06326818238030543733d40944",
     "vision/host/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/host/models.py": "672539f9150f4e13f09f04063a31a85de9e8ad0b90bec4c674e9a2bf66ee2d33",
     "vision/host/registry.py": "fef8640920985400a19e73a2762b19775553eb546c81991219c1046f6bb47d43",
-    "vision/host/server.py": "b4aa272e2c4bf4749e89258d356666cd7cb72a223535f81da6a37012bcbfcd37",
+    "vision/host/server.py": "63a28ba3705911d76e1b162b7c7cef9b71b6e4fadb4b5afd968ba089364ea0d4",
     "vision/plugins/frame_stats/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "vision/plugins/frame_stats/plugin.py": "c4913266f56b55910d9c03e572a0750d6b6ac80d8a223b5c7fdc83af8293d876",
+    "vision/plugins/frame_stats/plugin.py": "1b43646864560756d3a50b500dbf23e2ddb5acb612d34bb30f208fdb72928d9e",
     "vision/plugins/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "vision/pyproject.toml": "04b101e73cbf0d5caeaf49937b147a90e0462ed61c0cc571290704c4e593c243",
-    "vision/uv.lock": "e16c725a233a2a432ade4c26da4b8fdc57f8f1357c7ec52312d3c9fe5663df30"
+    "vision/plugins/onnx_generic/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/plugins/onnx_generic/plugin.py": "4ddafaf01a35a6a7a1d202a9de8014773af95901de18f75728786fd057bcbf80",
+    "vision/plugins/open_vocab/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/plugins/open_vocab/plugin.py": "2a5ba95941b25a1278ca12f49271e855a7fd89ccc7144a5d0e2afdd3747019c3",
+    "vision/plugins/ref_similarity/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/plugins/ref_similarity/plugin.py": "5a46b801a41e8dfb0ce81d90aa5a4bbd3883ad26aaced78ca6ffe75fb36ce77b",
+    "vision/plugins/sam_regions/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/plugins/sam_regions/plugin.py": "a722012eb86c7694e6f5e4628885aee9412bcac8526c1114ab43effb0405402f",
+    "vision/plugins/yolo/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/plugins/yolo/plugin.py": "2526053f79ad8a3777b2daef75157222b0bc44a45507bd2aa5f346f8833b3457",
+    "vision/pyproject.toml": "d0d3acf8e311f5ea1bc3c1351e22e1eebc86f2aab96a196023b0a2cd43c1352b",
+    "vision/uv.lock": "0958843c9afddaf7d707a952797655302ca0ba04f0d7aaae3f143744f1034200"
   },
   "transcriptSha256s": {
-    "workout-session.json": "cac0e93533061780ef103cbb2e339d876533fa9e83c17d4f2fe77243e83a107b"
+    "v1.1/camera-array.json": "6103cf7ae4452f0603e974972ca2489485da6bce13e0d230f6573eb9ed028374",
+    "v1.3/camera-set.json": "ecebdc28f582470e5cd41689534b981f1b68f84e291128e415c0f3736e5243ee",
+    "v1/workout-session.json": "cac0e93533061780ef103cbb2e339d876533fa9e83c17d4f2fe77243e83a107b"
   }
 }

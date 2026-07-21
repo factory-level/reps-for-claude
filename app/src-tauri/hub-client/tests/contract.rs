@@ -81,6 +81,7 @@ fn client_follows_the_v1_workout_transcript() {
         .enable_metric(&EnableMetric {
             metric_id: "workout".into(),
             plugin_id: "reps_vision".into(),
+            cameras: None,
             config: serde_json::json!({
                 "activity": "lift",
                 "targetReps": 2,
@@ -105,5 +106,89 @@ fn client_follows_the_v1_workout_transcript() {
     );
 
     client.disable_metric("workout").unwrap();
+    server.join().unwrap();
+}
+
+const TRANSCRIPT_V1_3: &str = include_str!("contracts/v1.3/camera-set.json");
+
+/// v1.3 camera-set choreography: subscribe happens inside connect(), then
+/// two add_camera calls, a camera-set enable, and a fused landmarks push.
+#[test]
+fn client_follows_the_v1_3_camera_set_transcript() {
+    let transcript: Transcript = serde_json::from_str(TRANSCRIPT_V1_3).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut ws = tungstenite::accept(stream).unwrap();
+        let mut last_id = serde_json::Value::Null;
+        for step in &transcript.steps {
+            match step.dir.as_str() {
+                "s2c" => {
+                    let frame = if let Some(reply) = step.msg.get("reply") {
+                        serde_json::json!({"id": last_id, "result": reply})
+                    } else {
+                        step.msg.clone()
+                    };
+                    ws.send(Message::Text(frame.to_string().into())).unwrap();
+                }
+                "c2s" => loop {
+                    match ws.read().unwrap() {
+                        Message::Text(text) => {
+                            let received: serde_json::Value =
+                                serde_json::from_str(&text).unwrap();
+                            last_id = received["id"].clone();
+                            assert_eq!(
+                                received["method"], step.msg["method"],
+                                "wrong method order"
+                            );
+                            assert_eq!(
+                                received["params"], step.msg["params"],
+                                "params differ from transcript for {}",
+                                step.msg["method"]
+                            );
+                            break;
+                        }
+                        Message::Close(_) => panic!("client closed early"),
+                        _ => {}
+                    }
+                },
+                other => panic!("bad transcript dir: {other}"),
+            }
+        }
+        let _ = ws.close(None);
+        let _ = ws.flush();
+    });
+
+    let mut client = HubClient::connect(&format!("ws://127.0.0.1:{port}/")).unwrap();
+    let rx = client.take_receiver().unwrap();
+    client
+        .add_camera(&serde_json::json!({
+            "cameraId": "front", "kind": "usb", "source": "v4l2:///dev/video0"
+        }))
+        .unwrap();
+    client
+        .add_camera(&serde_json::json!({
+            "cameraId": "side", "kind": "usb", "source": "v4l2:///dev/video1"
+        }))
+        .unwrap();
+    client
+        .enable_metric(&EnableMetric {
+            metric_id: "workout".into(),
+            plugin_id: "reps".into(),
+            cameras: Some(vec!["front".into(), "side".into()]),
+            config: serde_json::json!({
+                "fusion": {"policy": "best", "scoreField": "visibility"},
+            }),
+        })
+        .unwrap();
+
+    let event = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(matches!(event, VisionEvent::Landmarks(_)));
+
     server.join().unwrap();
 }

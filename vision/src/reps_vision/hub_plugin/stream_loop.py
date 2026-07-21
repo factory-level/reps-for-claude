@@ -45,10 +45,16 @@ class StreamLoop:
                     if (self._spec is not None and landmarks is not None)
                     else None
                 )
+                visibility = (
+                    sum(point[2] for point in landmarks.values()) / len(landmarks)
+                    if landmarks
+                    else 0.0
+                )
                 self._emit(
                     "landmarks",
                     {
                         "poseDetected": landmarks is not None,
+                        "visibility": visibility,
                         "landmarks": landmarks or {},
                         "angle": angle,
                         "measuredJoints": list(self._spec.measured_joints(landmarks) or ())

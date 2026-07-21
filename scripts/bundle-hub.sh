@@ -4,7 +4,7 @@
 #
 # The bundle layout the supervisor expects:
 #   hub-bundle/
-#     hubd.mjs          single-file hubd (node >= 20)
+#     hubd.mjs          single-file hubd (node >= 22.5 — node:sqlite)
 #     public/           snapshot tuning app assets
 #     vision/           vision-host sources + pyproject + uv.lock (frame_stats included)
 # The reps plugin is NOT staged here — it ships with this repo at
@@ -15,7 +15,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HUB_DIR="${HUB_DIR:-$REPO_ROOT/../usb-mcp-hub}"
 OUT="$REPO_ROOT/app/src-tauri/resources/hub-bundle"
-API_VERSION="1.0"
+API_VERSION="1.3"
 
 if [[ ! -d "$HUB_DIR" ]]; then
   echo "usb-mcp-hub checkout not found at $HUB_DIR (set HUB_DIR)" >&2
@@ -42,13 +42,14 @@ find "$OUT" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 find "$OUT" -name .pytest_cache -type d -exec rm -rf {} + 2>/dev/null || true
 
 # Transcript hashes pin the contract version the vendored Rust tests use.
-TRANSCRIPTS_DIR="$HUB_DIR/apps/hubd/test/contracts/v1"
+TRANSCRIPTS_DIR="$HUB_DIR/apps/hubd/test/contracts"
 
 manifest="$REPO_ROOT/app/src-tauri/resources/hub-manifest.json"
 {
   echo "{"
   echo "  \"hubCommit\": \"$HUB_COMMIT\","
   echo "  \"apiVersion\": \"$API_VERSION\","
+  echo "  \"nodeEngine\": \">=22.5\","
   echo "  \"artifactSha256s\": {"
   first=1
   while IFS= read -r file; do
@@ -63,7 +64,7 @@ manifest="$REPO_ROOT/app/src-tauri/resources/hub-manifest.json"
   echo "  \"transcriptSha256s\": {"
   first=1
   while IFS= read -r file; do
-    rel="$(basename "$file")"
+    rel="${file#"$TRANSCRIPTS_DIR/"}"
     hash="$(sha256sum "$file" | cut -d' ' -f1)"
     [[ $first -eq 0 ]] && echo ","
     first=0
@@ -77,10 +78,11 @@ manifest="$REPO_ROOT/app/src-tauri/resources/hub-manifest.json"
 echo "staged $(find "$OUT" -type f | wc -l) files into $OUT"
 echo "manifest: $manifest (hub @ ${HUB_COMMIT:0:12}, api v$API_VERSION)"
 
-# Verify the vendored contract transcripts match the pinned hub's.
-for file in "$TRANSCRIPTS_DIR"/*.json; do
-  vendored="$REPO_ROOT/app/src-tauri/hub-client/tests/contracts/v1/$(basename "$file")"
-  if [[ ! -f "$vendored" ]] || ! cmp -s "$file" "$vendored"; then
-    echo "warning: vendored transcript $(basename "$file") differs from hub — re-vendor it" >&2
+# Verify the vendored contract transcripts match the pinned hub's (only
+# versions the Rust client vendors are checked).
+while IFS= read -r vendored; do
+  rel="${vendored#"$REPO_ROOT/app/src-tauri/hub-client/tests/contracts/"}"
+  if ! cmp -s "$TRANSCRIPTS_DIR/$rel" "$vendored"; then
+    echo "warning: vendored transcript $rel differs from hub — re-vendor it" >&2
   fi
-done
+done < <(find "$REPO_ROOT/app/src-tauri/hub-client/tests/contracts" -type f -name '*.json' | sort)

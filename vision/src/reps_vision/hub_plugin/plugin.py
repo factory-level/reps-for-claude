@@ -163,14 +163,24 @@ def _mediapipe_estimator():
     return PoseEstimator()
 
 
+def _redact_camera(camera: dict) -> dict:
+    """Camera dict safe for error messages: strip URI credentials."""
+    import re
+
+    safe = dict(camera)
+    if isinstance(safe.get("value"), str):
+        safe["value"] = re.sub(r"//[^@/]+@", "//***@", safe["value"])
+    return safe
+
+
 def _cv2_capture(camera: dict):
     import cv2
 
     source = camera.get("source", "index")
     value = camera.get("value", 0)
-    capture = cv2.VideoCapture(value if source == "file" else int(value))
+    capture = cv2.VideoCapture(value if source in ("file", "uri") else int(value))
     if not capture.isOpened():
-        raise RuntimeError(f"cannot open camera: {camera}")
+        raise RuntimeError(f"cannot open camera: {_redact_camera(camera)}")
     if "width" in camera:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(camera["width"]))
     return capture

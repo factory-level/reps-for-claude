@@ -93,16 +93,34 @@ impl HubClient {
 }
 
 impl VisionHub for HubClient {
-    fn enable_metric(&mut self, req: &EnableMetric) -> Result<(), HubError> {
+    fn add_camera(&mut self, camera: &serde_json::Value) -> Result<(), HubError> {
+        self.rpc("add_camera", serde_json::json!({"camera": camera}))
+            .map(|_| ())
+    }
+
+    fn update_metric_config_for_camera(
+        &mut self,
+        metric_id: &str,
+        camera_id: &str,
+        config: &serde_json::Value,
+    ) -> Result<(), HubError> {
         self.rpc(
-            "enable_metric",
-            serde_json::json!({
-                "metricId": req.metric_id,
-                "pluginId": req.plugin_id,
-                "config": req.config,
-            }),
+            "update_metric_config",
+            serde_json::json!({"metricId": metric_id, "cameraId": camera_id, "config": config}),
         )
         .map(|_| ())
+    }
+
+    fn enable_metric(&mut self, req: &EnableMetric) -> Result<(), HubError> {
+        let mut params = serde_json::json!({
+            "metricId": req.metric_id,
+            "pluginId": req.plugin_id,
+            "config": req.config,
+        });
+        if let Some(cameras) = &req.cameras {
+            params["cameras"] = serde_json::json!(cameras);
+        }
+        self.rpc("enable_metric", params).map(|_| ())
     }
 
     fn disable_metric(&mut self, metric_id: &str) -> Result<(), HubError> {

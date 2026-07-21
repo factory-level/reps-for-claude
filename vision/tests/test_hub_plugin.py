@@ -120,6 +120,8 @@ def test_stream_emits_landmarks_progress_and_rep_events():
     assert landmark_frames[0]["poseDetected"] is True
     assert landmark_frames[0]["angle"] is not None
     assert "tsUs" in landmark_frames[0]
+    # fusion election score: mean landmark visibility, 0.0 when no pose
+    assert abs(landmark_frames[0]["visibility"] - 0.9) < 1e-6
     events = [d for s, d in frames if s == "event"]
     rep_events = [e for e in events if e["type"] == "rep_completed"]
     assert [e["count"] for e in rep_events] == [1, 2]
@@ -129,6 +131,66 @@ def test_stream_emits_landmarks_progress_and_rep_events():
     progress = [d for s, d in frames if s == "progress"]
     assert progress[-1]["value"] == 2.0
     assert progress[-1]["satisfied"] is True
+
+
+def test_stream_reports_zero_visibility_without_pose():
+    estimator = FakeEstimator([None, None])
+    capture = FakeCapture(2)
+    plugin = make_plugin(estimator, capture)
+    plugin.configure(SQUAT_CONFIG)
+    emitted = []
+    plugin.start_stream({"camera": {"source": "index", "value": 0}}, lambda s, d: emitted.append((s, d)))
+    frames = collect(emitted, 2)
+    plugin.stop_stream()
+    landmark_frames = [d for s, d in frames if s == "landmarks"]
+    assert landmark_frames[0]["visibility"] == 0.0
+
+
+def test_cv2_capture_passes_uri_sources_through():
+    """source:'uri' (go2rtc RTSP restream) must reach cv2 as the string URI."""
+    from reps_vision.hub_plugin import plugin as plugin_module
+
+    class FakeCv2:
+        CAP_PROP_FRAME_WIDTH = 3
+
+        class FakeVideoCapture:
+            def __init__(self, value):
+                self.value = value
+
+            def isOpened(self):
+                return True
+
+            def set(self, *_args):
+                pass
+
+        def VideoCapture(self, value):
+            self.opened = value
+            return self.FakeVideoCapture(value)
+
+    fake = FakeCv2()
+    import sys
+    real = sys.modules.get("cv2")
+    sys.modules["cv2"] = fake
+    try:
+        capture = plugin_module._cv2_capture(
+            {"source": "uri", "value": "rtsp://127.0.0.1:8554/front"}
+        )
+        assert capture.value == "rtsp://127.0.0.1:8554/front"
+        capture = plugin_module._cv2_capture({"source": "index", "value": "0"})
+        assert capture.value == 0
+    finally:
+        if real is not None:
+            sys.modules["cv2"] = real
+        else:
+            sys.modules.pop("cv2", None)
+
+
+def test_capture_error_redacts_uri_credentials():
+    from reps_vision.hub_plugin.plugin import _redact_camera
+
+    safe = _redact_camera({"source": "uri", "value": "rtsp://user:secret@10.0.0.5/front"})
+    assert safe["value"] == "rtsp://***@10.0.0.5/front"
+    assert "secret" not in str(safe)
 
 
 def test_stream_jumprope_reports_duration():
