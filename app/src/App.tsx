@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import "./App.css";
 import { DebugPanel } from "./DebugPanel";
+import { OperatorPanel } from "./OperatorPanel";
 import type { Action } from "./WorkstationCard";
 import { WorkstationCard } from "./WorkstationCard";
 import { useSnapshot } from "./useSnapshot";
@@ -25,6 +26,9 @@ export default function App() {
         snapshot={snapshot}
         onAction={(a, value) => void COMMANDS[a](value)}
       />
+      {(snapshot.phase === "WORKOUT_ACTIVE" || snapshot.phase === "WEIGHT_CONFIRMATION") && (
+        <OperatorPanel />
+      )}
       <button onClick={() => setShowDebug((v) => !v)}>
         {showDebug ? "Hide" : "Show"} Detection Debug
       </button>
