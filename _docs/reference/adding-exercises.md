@@ -149,16 +149,18 @@ best view per moment (occlusion-proof rep counting). Add a top-level
     { "cameraId": "side",  "kind": "usb", "source": "v4l2:///dev/video1" }
   ],
   "set": ["front", "side"],
-  "fusion": { "policy": "best", "scoreField": "visibility" }
+  "fusion": { "policy": "best", "scoreField": "visibility" },
+  "overlays": { "side": { "exercise": { "downBelow": 95.0 } } }
 }
 ```
 
 On session start the app registers the cameras, enables the workout
 metric across the set, and the hub fuses the streams: only the elected
 primary's landmarks/events reach the app (`fused: true`,
-`primary_camera_changed` on election flips). Per-camera tuning deltas
-(e.g. a different `downBelow` for the side angle) are applied from the
-hub's tuning app overlay editor.
+`primary_camera_changed` on election flips). Per-camera tuning deltas (e.g. a different
+`downBelow` for the side angle) ship in the `overlays` map — applied
+after enable via `update_metric_config {cameraId}` — and can also be
+tuned live from the hub's tuning app overlay editor.
 
 Without the block everything behaves exactly as single-camera. Verify a
 two-camera setup with:

@@ -1,11 +1,12 @@
 {
-  "hubCommit": "5cf571c0cfc9c21f3d04f4103cabc45cebc44f97",
+  "hubCommit": "4bc25d34aa3017c4dce128e8624193d8e3f23df8",
   "apiVersion": "1.3",
+  "nodeEngine": ">=22.5",
   "artifactSha256s": {
-    "hubd.mjs": "ea7845fe200b6a278f2fac850a8942ca33ba804a39b119047042b6d2a1ee2235",
+    "hubd.mjs": "1da9aaba73018ce4d8cbb541ccb4a995c6d277210b4e998054b977fb31aa6ecd",
     "public/app.js": "8e4eb0da8f21fd8c400a85a1b21bcec40fead282739fac1ab1435ec28f4fcf7a",
     "public/index.html": "d807d13065b6a157b7f8ca780f94e23ac7f2628674d687ede38cb0f81e86e519",
-    "vision/host/contract.py": "f76c7232715728efd600735e2913b48cd4ab7a649d92d646f2fdccf346f1ddcb",
+    "vision/host/contract.py": "e3ae4819d40b249a97266abebf7aef58e94afc06326818238030543733d40944",
     "vision/host/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "vision/host/models.py": "672539f9150f4e13f09f04063a31a85de9e8ad0b90bec4c674e9a2bf66ee2d33",
     "vision/host/registry.py": "fef8640920985400a19e73a2762b19775553eb546c81991219c1046f6bb47d43",

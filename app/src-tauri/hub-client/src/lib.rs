@@ -101,11 +101,16 @@ pub trait VisionHub: Send {
         config: &serde_json::Value,
     ) -> Result<(), HubError>;
     fn simulate(&mut self, metric_id: &str, event: &serde_json::Value) -> Result<(), HubError>;
-    /// Register a camera in the hub's registry (API 1.1+). Default no-op so
-    /// fakes and older hubs keep working.
-    fn add_camera(&mut self, _camera: &serde_json::Value) -> Result<(), HubError> {
-        Ok(())
-    }
+    /// Register a camera in the hub's registry (API 1.1+). Required — a
+    /// silent default here would let a real client no-op registration.
+    fn add_camera(&mut self, camera: &serde_json::Value) -> Result<(), HubError>;
+    /// Per-camera config overlay on a camera-set metric (API 1.3).
+    fn update_metric_config_for_camera(
+        &mut self,
+        metric_id: &str,
+        camera_id: &str,
+        config: &serde_json::Value,
+    ) -> Result<(), HubError>;
     fn health(&mut self) -> Result<HubHealth, HubError>;
     /// The event stream; `None` after the first call.
     fn take_receiver(&mut self) -> Option<mpsc::Receiver<VisionEvent>>;

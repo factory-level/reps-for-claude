@@ -65,6 +65,24 @@ impl VisionHub for FakeHub {
         Ok(())
     }
 
+    fn add_camera(&mut self, camera: &serde_json::Value) -> Result<(), HubError> {
+        self.check_fail()?;
+        let id = camera["cameraId"].as_str().unwrap_or("?");
+        self.calls.push(format!("add_camera:{id}"));
+        Ok(())
+    }
+
+    fn update_metric_config_for_camera(
+        &mut self,
+        metric_id: &str,
+        camera_id: &str,
+        _config: &serde_json::Value,
+    ) -> Result<(), HubError> {
+        self.check_fail()?;
+        self.calls.push(format!("update:{metric_id}:{camera_id}"));
+        Ok(())
+    }
+
     fn simulate(&mut self, metric_id: &str, event: &serde_json::Value) -> Result<(), HubError> {
         self.calls.push(format!("simulate:{metric_id}"));
         if let Some(converted) = crate::event_from_frame(&serde_json::json!({

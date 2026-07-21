@@ -49,6 +49,7 @@ manifest="$REPO_ROOT/app/src-tauri/resources/hub-manifest.json"
   echo "{"
   echo "  \"hubCommit\": \"$HUB_COMMIT\","
   echo "  \"apiVersion\": \"$API_VERSION\","
+  echo "  \"nodeEngine\": \">=22.5\","
   echo "  \"artifactSha256s\": {"
   first=1
   while IFS= read -r file; do

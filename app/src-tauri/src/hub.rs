@@ -74,6 +74,8 @@ pub fn metric_config_for(
 pub struct CameraSet {
     pub registry: Vec<serde_json::Value>,
     pub cameras: Vec<String>,
+    /// Per-camera config deltas applied after enable (tuning overlays).
+    pub overlays: Vec<(String, serde_json::Value)>,
 }
 
 /// When the specs declare a camera set, strip the injected single-camera
@@ -84,12 +86,12 @@ pub fn apply_camera_set(
 ) -> Option<CameraSet> {
     let block = specs.get("cameras")?;
     let cameras: Vec<String> = block
-        .get("set")?
-        .as_array()?
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
+        .get("set")
+        .and_then(|s| s.as_array())
+        .map(|set| set.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
     if cameras.len() < 2 {
+        eprintln!("hub: cameras.set needs >= 2 camera ids; falling back to single camera");
         return None;
     }
     let registry = block
@@ -106,7 +108,49 @@ pub fn apply_camera_set(
             .cloned()
             .unwrap_or_else(|| serde_json::json!({"policy": "best", "scoreField": "visibility"})),
     );
-    Some(CameraSet { registry, cameras })
+    let overlays = block
+        .get("overlays")
+        .and_then(|o| o.as_object())
+        .map(|map| {
+            map.iter()
+                .filter(|(camera_id, _)| cameras.contains(camera_id))
+                .map(|(camera_id, delta)| (camera_id.clone(), delta.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(CameraSet {
+        registry,
+        cameras,
+        overlays,
+    })
+}
+
+/// Drive a hub through camera-set setup: register cameras, enable the
+/// metric, then apply per-camera overlays. Extracted from the async enable
+/// path so the ordering is unit-testable against the fake hub.
+pub fn enable_on_hub(
+    hub: &mut dyn hub_client::VisionHub,
+    camera_set: &Option<CameraSet>,
+    request: &EnableMetric,
+) -> Result<(), hub_client::HubError> {
+    if let Some(set) = camera_set {
+        for camera in &set.registry {
+            if let Err(err) = hub.add_camera(camera) {
+                eprintln!("hub: add_camera failed: {err}");
+            }
+        }
+    }
+    hub.enable_metric(request)?;
+    if let Some(set) = camera_set {
+        for (camera_id, delta) in &set.overlays {
+            if let Err(err) =
+                hub.update_metric_config_for_camera(&request.metric_id, camera_id, delta)
+            {
+                eprintln!("hub: overlay for {camera_id} failed: {err}");
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Start the supervisor in the background and pump its events into the
@@ -219,20 +263,13 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
         let mut guard = state.lock().unwrap();
         match guard.as_mut() {
             Some(hub) => {
-                if let Some(set) = &camera_set {
-                    for camera in &set.registry {
-                        if let Err(err) = hub.add_camera(camera) {
-                            eprintln!("hub: add_camera failed: {err}");
-                        }
-                    }
-                }
                 let request = EnableMetric {
                     metric_id: WORKOUT_METRIC.into(),
                     plugin_id,
-                    cameras: camera_set.map(|set| set.cameras),
+                    cameras: camera_set.as_ref().map(|set| set.cameras.clone()),
                     config,
                 };
-                if let Err(err) = hub.enable_metric(&request) {
+                if let Err(err) = enable_on_hub(hub.as_mut(), &camera_set, &request) {
                     eprintln!("hub: enable_metric failed: {err}");
                     let _ = app.emit(
                         "vision-fallback",
@@ -330,6 +367,49 @@ mod tests {
         // exclusive with the injected single-camera object
         assert!(config.get("camera").is_none());
         assert_eq!(config["fusion"]["scoreField"], "visibility");
+    }
+
+    #[test]
+    fn enable_on_hub_registers_cameras_then_enables_then_applies_overlays() {
+        let specs = serde_json::json!({
+            "model": {"plugin": "reps_vision"},
+            "cameras": {
+                "registry": [
+                    {"cameraId": "front", "kind": "usb", "source": "v4l2:///dev/video0"},
+                    {"cameraId": "side", "kind": "usb", "source": "v4l2:///dev/video1"}
+                ],
+                "set": ["front", "side"],
+                "fusion": {"policy": "best", "scoreField": "visibility"},
+                "overlays": {"side": {"exercise": {"downBelow": 95.0}}}
+            },
+            "exercises": {"squat": {"activity": "lift",
+                "exercise": {"name": "squat", "joints": ["hip","knee","ankle"],
+                              "downBelow": 110.0, "upAbove": 160.0}}}
+        });
+        let (plugin_id, mut config) = metric_config_for(&specs, "squat", 5, 0.0).unwrap();
+        let camera_set = apply_camera_set(&specs, &mut config);
+        let mut hub = hub_client::fake::FakeHub::new(vec![]);
+        enable_on_hub(
+            &mut hub,
+            &camera_set,
+            &EnableMetric {
+                metric_id: WORKOUT_METRIC.into(),
+                plugin_id,
+                cameras: camera_set.as_ref().map(|set| set.cameras.clone()),
+                config,
+            },
+        )
+        .unwrap();
+        // registration precedes enable; overlays follow it
+        assert_eq!(
+            hub.calls,
+            vec![
+                "add_camera:front".to_string(),
+                "add_camera:side".to_string(),
+                format!("enable:{WORKOUT_METRIC}:reps_vision"),
+                format!("update:{WORKOUT_METRIC}:side"),
+            ]
+        );
     }
 
     #[test]

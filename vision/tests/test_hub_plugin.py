@@ -185,6 +185,14 @@ def test_cv2_capture_passes_uri_sources_through():
             sys.modules.pop("cv2", None)
 
 
+def test_capture_error_redacts_uri_credentials():
+    from reps_vision.hub_plugin.plugin import _redact_camera
+
+    safe = _redact_camera({"source": "uri", "value": "rtsp://user:secret@10.0.0.5/front"})
+    assert safe["value"] == "rtsp://***@10.0.0.5/front"
+    assert "secret" not in str(safe)
+
+
 def test_stream_jumprope_reports_duration():
     # hip bouncing every frame -> streak accrues
     poses = []
