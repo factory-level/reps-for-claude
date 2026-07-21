@@ -1,0 +1,16 @@
+{
+  "apiVersion": "1.0",
+  "description": "Canonical reps workout choreography: hello, subscribe, enable, landmark/progress/event pushes, disable.",
+  "steps": [
+    { "dir": "s2c", "msg": { "type": "hello", "apiVersion": "1.0", "hubVersion": "contract-test" } },
+    { "dir": "c2s", "msg": { "method": "subscribe", "params": { "streams": ["landmarks", "progress", "event", "health"] } } },
+    { "dir": "s2c", "msg": { "reply": { "streams": ["landmarks", "progress", "event", "health"] } } },
+    { "dir": "c2s", "msg": { "method": "enable_metric", "params": { "metricId": "workout", "pluginId": "reps_vision", "config": { "activity": "lift", "targetReps": 2, "exercise": { "name": "squat", "joints": ["hip", "knee", "ankle"], "downBelow": 110, "upAbove": 160 }, "camera": { "source": "index", "value": 0, "id": "cam-desk" } } } } },
+    { "dir": "s2c", "msg": { "reply": { "enabled": "workout" } } },
+    { "dir": "s2c", "msg": { "stream": "landmarks", "pluginId": "reps_vision", "metricId": "workout", "cameraId": "cam-desk", "seq": 1, "tsUs": 1000, "data": { "poseDetected": true, "angle": 170.0, "landmarks": {}, "measuredJoints": ["left_hip", "left_knee", "left_ankle"] } } },
+    { "dir": "s2c", "msg": { "stream": "progress", "pluginId": "reps_vision", "metricId": "workout", "cameraId": "cam-desk", "seq": 2, "tsUs": 2000, "data": { "value": 1, "unit": "reps", "satisfied": false } } },
+    { "dir": "s2c", "msg": { "stream": "event", "pluginId": "reps_vision", "metricId": "workout", "cameraId": "cam-desk", "seq": 3, "tsUs": 3000, "data": { "type": "rep_completed", "count": 1 } } },
+    { "dir": "c2s", "msg": { "method": "disable_metric", "params": { "metricId": "workout" } } },
+    { "dir": "s2c", "msg": { "reply": { "disabled": "workout" } } }
+  ]
+}

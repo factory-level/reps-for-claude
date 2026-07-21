@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine"]
+members = ["engine", "hub-client"]
 
 [package]
 name = "app"
