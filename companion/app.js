@@ -165,12 +165,23 @@ function onLandmarks(data) {
   }
 }
 
+// history pages ascend by rowid — walk to the end to find the true latest.
+async function latestEvent(types) {
+  let sinceRowId = 0;
+  let last = null;
+  for (;;) {
+    const { items, nextRowId } = await rpc("query_history", {
+      kind: "event", types, sinceRowId, limit: 500,
+    });
+    if (items.length) last = items.at(-1);
+    if (items.length < 500 || nextRowId === sinceRowId) return last;
+    sinceRowId = nextRowId;
+  }
+}
+
 async function loadPrescriptionAndConfig() {
   try {
-    const { items } = await rpc("query_history", {
-      kind: "event", types: ["workout_prescribed"], limit: 500,
-    });
-    const last = items.at(-1);
+    const last = await latestEvent(["workout_prescribed"]);
     if (last) onHubEvent(last);
   } catch { /* no history yet */ }
   try {

@@ -246,6 +246,12 @@ fn confirm_weight(app: AppHandle, state: State<SharedCore>, weight: f64) -> Snap
         );
     }
     let snap = persist_and_snapshot(&mut core);
+    drop(core);
+    // Camera gating: confirming the weight ENDS the workout, so it must
+    // release the camera like every other completion path. Found live: a
+    // simulated/early completion left the detector running (and counting)
+    // after desktop_unlocked because only the hub-satisfied path disabled.
+    hub::disable_metric_async(&app);
     emit_snapshot(&app, &snap);
     snap
 }
