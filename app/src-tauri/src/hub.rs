@@ -357,6 +357,10 @@ pub fn enable_on_hub(
     camera_set: &Option<CameraSet>,
     request: &EnableMetric,
 ) -> Result<(), hub_client::HubError> {
+    // A new lock cycle must never inherit a stale stream: disable first so a
+    // leftover metric (rapid re-lock, missed disable) is torn down before the
+    // fresh enable. Failing disable is normal — usually "unknown_metric".
+    let _ = hub.disable_metric(&request.metric_id);
     if let Some(set) = camera_set {
         for camera in &set.registry {
             if let Err(err) = hub.add_camera(camera) {
@@ -696,10 +700,11 @@ mod tests {
             },
         )
         .unwrap();
-        // registration precedes enable; overlays follow it
+        // stale-stream teardown first, then registration, enable, overlays
         assert_eq!(
             hub.calls,
             vec![
+                format!("disable:{WORKOUT_METRIC}"),
                 "add_camera:front".to_string(),
                 "add_camera:side".to_string(),
                 format!("enable:{WORKOUT_METRIC}:reps_vision"),
