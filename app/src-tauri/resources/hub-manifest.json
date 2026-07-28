@@ -1,9 +1,9 @@
 {
-  "hubCommit": "ce6385d3e2535ee0e8bec6e8c47392fd33310956",
-  "apiVersion": "1.3",
+  "hubCommit": "7c5190568e8637bf50acb593b3cb0ff6597bffd8",
+  "apiVersion": "1.4",
   "nodeEngine": ">=22.5",
   "artifactSha256s": {
-    "hubd.mjs": "64446bb3ff65e9315625596b80af84386399f1265e26bc4cd01da8404f88c8ee",
+    "hubd.mjs": "3a61d8593b60bfe1ab58cf64d3109769613e8041dc39d429b189347ff0cca50f",
     "public/app.js": "8e4eb0da8f21fd8c400a85a1b21bcec40fead282739fac1ab1435ec28f4fcf7a",
     "public/index.html": "d807d13065b6a157b7f8ca780f94e23ac7f2628674d687ede38cb0f81e86e519",
     "vision/host/contract.py": "e3ae4819d40b249a97266abebf7aef58e94afc06326818238030543733d40944",
@@ -32,6 +32,7 @@
   "transcriptSha256s": {
     "v1.1/camera-array.json": "6103cf7ae4452f0603e974972ca2489485da6bce13e0d230f6573eb9ed028374",
     "v1.3/camera-set.json": "ecebdc28f582470e5cd41689534b981f1b68f84e291128e415c0f3736e5243ee",
+    "v1.4/reps-application.json": "9ba8a278c2a7fc5e5c5bc66134031abb8ad81ae6ab3d3dd57bd6ec9734ded47e",
     "v1/workout-session.json": "cac0e93533061780ef103cbb2e339d876533fa9e83c17d4f2fe77243e83a107b"
   }
 }

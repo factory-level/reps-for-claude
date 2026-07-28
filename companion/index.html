@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reps — Companion</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0b0f0c; color: #d7e4d9; }
+  nav { display: flex; border-bottom: 1px solid #1f2b21; position: sticky; top: 0; background: #0b0f0c; }
+  nav a { flex: 1; text-align: center; padding: 0.9rem 0; color: #7d8f80; text-decoration: none; font-weight: 600; }
+  nav a.active { color: #6ee787; border-bottom: 2px solid #6ee787; }
+  main { padding: 1rem; max-width: 640px; margin: 0 auto; }
+  section { display: none; }
+  section.active { display: block; }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; color: #7d8f80; margin: 1.2rem 0 0.4rem; }
+  .big { font-size: 3.2rem; font-weight: 800; color: #6ee787; line-height: 1.1; }
+  .card { background: #101710; border: 1px solid #1f2b21; border-radius: 10px; padding: 0.9rem; margin: 0.6rem 0; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; margin: 0.35rem 0; }
+  .ok { color: #6ee787; } .bad { color: #ff7b72; } .warn { color: #e3b341; }
+  canvas { width: 100%; aspect-ratio: 4/3; background: #060906; border-radius: 10px; border: 1px solid #1f2b21; }
+  input[type=number] { width: 6rem; background: #0b0f0c; color: #d7e4d9; border: 1px solid #2a3a2c; border-radius: 6px; padding: 0.45rem; font-size: 1rem; }
+  button { background: #1c3524; color: #6ee787; border: 1px solid #2a4a33; border-radius: 8px; padding: 0.6rem 1.1rem; font-size: 1rem; font-weight: 600; }
+  button:active { background: #234a2e; }
+  ul.timeline { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
+  ul.timeline li { padding: 0.45rem 0.2rem; border-bottom: 1px solid #151f16; display: flex; gap: 0.6rem; }
+  ul.timeline time { color: #62705f; white-space: nowrap; }
+  .muted { color: #62705f; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="#workout" id="tab-workout">Workout</a>
+  <a href="#calibrate" id="tab-calibrate">Calibrate</a>
+  <a href="#history" id="tab-history">History</a>
+</nav>
+<main>
+  <section id="workout">
+    <h2>Prescription</h2>
+    <div class="card">
+      <div class="row"><span id="rx-exercise" style="font-size:1.4rem;font-weight:700">—</span><span id="rx-target" class="muted"></span></div>
+    </div>
+    <h2>Live</h2>
+    <div class="card" style="text-align:center">
+      <div class="big" id="live-count">0</div>
+      <div class="muted" id="live-unit">waiting for detector…</div>
+    </div>
+    <h2>Health</h2>
+    <div class="card">
+      <div class="row"><span>Hub</span><span id="h-hub" class="warn">connecting…</span></div>
+      <div class="row"><span>Camera</span><span id="h-camera">—</span></div>
+      <div class="row"><span>Detector</span><span id="h-detector">—</span></div>
+      <div class="row"><span>Pose</span><span id="h-pose">—</span></div>
+    </div>
+  </section>
+
+  <section id="calibrate">
+    <h2>Live skeleton</h2>
+    <canvas id="skeleton" width="640" height="480"></canvas>
+    <div class="card">
+      <div class="row"><span>Joint angle</span><span id="c-angle" class="big" style="font-size:1.6rem">—</span></div>
+      <div class="row"><span>Rep phase</span><span id="c-phase">—</span></div>
+      <div class="row"><span>Measured joints</span><span id="c-joints" class="muted">—</span></div>
+      <div class="row"><span>Camera</span><span id="c-camera" class="muted">—</span></div>
+    </div>
+    <h2>Thresholds</h2>
+    <div class="card" id="thresholds">
+      <div class="row"><label for="t-down">Down below</label><input type="number" id="t-down" step="1"></div>
+      <div class="row"><label for="t-up">Up above</label><input type="number" id="t-up" step="1"></div>
+      <div class="row"><span class="muted">Applies to the running set (live tune)</span><button id="t-save">Save</button></div>
+      <div class="muted" id="t-status"></div>
+    </div>
+  </section>
+
+  <section id="history">
+    <h2>Workouts</h2>
+    <ul class="timeline" id="hist-workouts"><li class="muted">loading…</li></ul>
+    <h2>Overrides &amp; failures</h2>
+    <ul class="timeline" id="hist-problems"><li class="muted">loading…</li></ul>
+    <h2>Event timeline</h2>
+    <ul class="timeline" id="hist-events"><li class="muted">loading…</li></ul>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

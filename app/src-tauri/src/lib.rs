@@ -144,8 +144,11 @@ pub(crate) fn print_state(snap: &Snapshot) {
     }
 }
 
-fn emit_snapshot(app: &AppHandle, snap: &Snapshot) {
+pub(crate) fn emit_snapshot(app: &AppHandle, snap: &Snapshot) {
     print_state(snap);
+    // Durable history: phase changes publish their reps.* events through the
+    // hub (fire-and-forget; queues while the hub is down).
+    hub::publish_phase_transition(snap);
     let _ = app.emit("snapshot", snap);
 }
 
@@ -237,6 +240,10 @@ fn confirm_weight(app: AppHandle, state: State<SharedCore>, weight: f64) -> Snap
             Err(e) => eprintln!("failed to record set: {e}"),
         }
         core.session.take_pending_record(); // already persisted
+        hub::queue_event(
+            "weight_logged",
+            serde_json::json!({"exercise": rec.exercise, "weight": weight}),
+        );
     }
     let snap = persist_and_snapshot(&mut core);
     emit_snapshot(&app, &snap);
@@ -548,8 +555,7 @@ pub fn run() {
                 core.session.tick(clock.now(), &clock.today());
                 let snap = core.session.snapshot(clock.now());
                 drop(core);
-                print_state(&snap);
-                let _ = handle.emit("snapshot", &snap);
+                emit_snapshot(&handle, &snap);
             });
             Ok(())
         })

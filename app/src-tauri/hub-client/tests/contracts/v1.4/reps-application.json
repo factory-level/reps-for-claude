@@ -1,0 +1,17 @@
+{
+  "apiVersion": "1.4",
+  "description": "FieldLab V1 taxonomy + application registration: reps registers its manifest, publishes app-defined events with client-supplied ids, and records a command and its distinct action result.",
+  "steps": [
+    { "dir": "s2c", "msg": { "type": "hello", "apiVersion": "1.4", "hubVersion": "contract-test" } },
+    { "dir": "c2s", "msg": { "method": "subscribe", "params": { "streams": ["landmarks", "progress", "event", "health"] } } },
+    { "dir": "s2c", "msg": { "reply": { "streams": ["landmarks", "progress", "event", "health"] } } },
+    { "dir": "c2s", "msg": { "method": "register_application", "params": { "appId": "reps", "version": "0.1.0", "manifest": { "events": { "rep_completed": { "schemaVersion": "1" }, "workout_completed": { "schemaVersion": "1" } }, "commands": { "desktop.lock_requested": { "schemaVersion": "1", "exposed": false } } } } } },
+    { "dir": "s2c", "msg": { "reply": { "registered": "reps" } } },
+    { "dir": "c2s", "msg": { "method": "publish_event", "params": { "appId": "reps", "type": "rep_completed", "id": "evt-1", "sessionId": "sess-1", "payload": { "count": 1 } } } },
+    { "dir": "s2c", "msg": { "reply": { "published": "evt-1" } } },
+    { "dir": "c2s", "msg": { "method": "publish_command", "params": { "appId": "reps", "type": "desktop.lock_requested", "id": "cmd-1", "sessionId": "sess-1", "payload": { "reason": "workout" } } } },
+    { "dir": "s2c", "msg": { "reply": { "requested": "cmd-1" } } },
+    { "dir": "c2s", "msg": { "method": "report_action_result", "params": { "appId": "reps", "type": "desktop.lock_succeeded", "id": "res-1", "commandId": "cmd-1", "status": "succeeded", "sessionId": "sess-1", "payload": {} } } },
+    { "dir": "s2c", "msg": { "reply": { "recorded": "res-1" } } }
+  ]
+}

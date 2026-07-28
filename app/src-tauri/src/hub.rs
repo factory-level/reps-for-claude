@@ -13,8 +13,224 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub const EXERCISE_SPECS: &str = include_str!("../resources/exercise_specs.json");
 pub const WORKOUT_METRIC: &str = "workout";
+pub const APP_ID: &str = "reps";
 
 pub type SharedHub = Mutex<Option<Box<dyn VisionHub>>>;
+
+/// The FieldLab application manifest (API 1.4): every durable event and
+/// command reps publishes, declared up front. The hub rejects unregistered
+/// types, so this list IS the app's event contract.
+pub fn reps_manifest() -> serde_json::Value {
+    let event = serde_json::json!({"schemaVersion": "1"});
+    serde_json::json!({
+        "events": {
+            "coding_period_started": event, "coding_period_expired": event,
+            "workout_prescribed": event, "desktop_locked": event,
+            "detector_started": event, "rep_completed": event,
+            "target_reached": event, "weight_logged": event,
+            "workout_completed": event, "detector_stopped": event,
+            "desktop_unlocked": event, "override_used": event,
+            "system_error": event,
+        },
+        "commands": {
+            // exposed:false — invokable only by the app itself in V1; remote
+            // lock/camera control needs a safety story first.
+            "desktop.lock_requested": {"schemaVersion": "1", "exposed": false},
+            "detector.enable_requested": {"schemaVersion": "1", "exposed": false},
+        },
+    })
+}
+
+// ---- Durable publishing -------------------------------------------------
+// One background thread owns all publish traffic so no UI or state path ever
+// blocks on the hub. Messages queue while the hub is down and flush on
+// reconnect; a message that keeps failing is retried, then dropped loudly.
+
+enum Publish {
+    Event(serde_json::Value),
+    Command(serde_json::Value),
+    ActionResult(serde_json::Value),
+}
+
+static PUBLISH_TX: Mutex<Option<std::sync::mpsc::Sender<Publish>>> = Mutex::new(None);
+static SESSION_ID: Mutex<Option<String>> = Mutex::new(None);
+
+fn new_session_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let id = format!("sess-{nanos}");
+    *SESSION_ID.lock().unwrap() = Some(id.clone());
+    id
+}
+
+fn session_id() -> Option<String> {
+    SESSION_ID.lock().unwrap().clone()
+}
+
+fn queue(message: Publish) {
+    if let Some(tx) = PUBLISH_TX.lock().unwrap().as_ref() {
+        let _ = tx.send(message);
+    }
+}
+
+/// Queue an app event for durable publication (fire-and-forget, never blocks).
+pub fn queue_event(event_type: &str, payload: serde_json::Value) {
+    let mut params = serde_json::json!({"appId": APP_ID, "type": event_type, "payload": payload});
+    if let Some(sid) = session_id() {
+        params["sessionId"] = serde_json::json!(sid);
+    }
+    queue(Publish::Event(params));
+}
+
+fn queue_command(command_type: &str, payload: serde_json::Value) -> String {
+    let id = format!("cmd-{}", new_msg_nanos());
+    let mut params =
+        serde_json::json!({"appId": APP_ID, "type": command_type, "id": id, "payload": payload});
+    if let Some(sid) = session_id() {
+        params["sessionId"] = serde_json::json!(sid);
+    }
+    queue(Publish::Command(params));
+    id
+}
+
+fn queue_action_result(result_type: &str, command_id: &str, status: &str) {
+    let mut params = serde_json::json!({
+        "appId": APP_ID, "type": result_type, "commandId": command_id, "status": status,
+        "payload": {},
+    });
+    if let Some(sid) = session_id() {
+        params["sessionId"] = serde_json::json!(sid);
+    }
+    queue(Publish::ActionResult(params));
+}
+
+fn new_msg_nanos() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+}
+
+/// Start the publisher thread: drains the queue against SharedHub, retrying
+/// while the hub is down so history survives restarts. Idempotent.
+fn start_publisher(app: AppHandle) {
+    let (tx, rx) = std::sync::mpsc::channel::<Publish>();
+    {
+        let mut guard = PUBLISH_TX.lock().unwrap();
+        if guard.is_some() {
+            return; // already running
+        }
+        *guard = Some(tx);
+    }
+    std::thread::Builder::new()
+        .name("hub-publish".into())
+        .spawn(move || {
+            for message in rx {
+                let mut attempts = 0u32;
+                loop {
+                    let state = app.state::<SharedHub>();
+                    let mut guard = state.lock().unwrap();
+                    let outcome = match guard.as_mut() {
+                        Some(hub) => match &message {
+                            Publish::Event(p) => hub.publish_event(p),
+                            Publish::Command(p) => hub.publish_command(p),
+                            Publish::ActionResult(p) => hub.report_action_result(p),
+                        },
+                        None => Err(hub_client::HubError::Down),
+                    };
+                    drop(guard);
+                    match outcome {
+                        Ok(()) => break,
+                        Err(err) => {
+                            attempts += 1;
+                            if attempts >= 150 {
+                                // ~5 minutes of a dead hub: drop loudly rather
+                                // than damming every later event behind it.
+                                eprintln!("[EVENTS] ⚠ dropping unpublished message after retries: {err}");
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                        }
+                    }
+                }
+            }
+        })
+        .ok();
+}
+
+/// The durable events implied by a phase change — pure so the mapping is
+/// unit-testable. `lock_cycle` distinguishes the command-worthy transitions:
+/// entering ExerciseRequired starts a session, returning to Coding ends it.
+pub(crate) fn events_for_transition(
+    prev: Option<&engine::types::Phase>,
+    next: &engine::types::Phase,
+    prescription: Option<&engine::types::Prescription>,
+) -> Vec<(&'static str, serde_json::Value)> {
+    use engine::types::Phase;
+    match (prev, next) {
+        (None, Phase::Coding) | (Some(Phase::Unlocked), Phase::Coding) => {
+            vec![("coding_period_started", serde_json::json!({}))]
+        }
+        (Some(Phase::Coding), Phase::ExerciseRequired) => {
+            let mut events = vec![("coding_period_expired", serde_json::json!({}))];
+            if let Some(rx) = prescription {
+                events.push((
+                    "workout_prescribed",
+                    serde_json::json!({
+                        "exercise": rx.exercise,
+                        "targetReps": rx.target_reps,
+                        "targetSeconds": rx.target_seconds,
+                    }),
+                ));
+            }
+            events.push(("desktop_locked", serde_json::json!({})));
+            events
+        }
+        (Some(Phase::WorkoutActive), Phase::Unlocked)
+        | (Some(Phase::WeightConfirmation), Phase::Unlocked) => vec![
+            ("workout_completed", serde_json::json!({})),
+            ("desktop_unlocked", serde_json::json!({})),
+        ],
+        _ => vec![],
+    }
+}
+
+/// Publish the durable events implied by a phase change. Called from
+/// emit_snapshot — the single choke point every state mutation goes through.
+pub(crate) fn publish_phase_transition(snap: &engine::types::Snapshot) {
+    use engine::types::Phase;
+    static LAST: Mutex<Option<Phase>> = Mutex::new(None);
+    let prev = {
+        let mut last = LAST.lock().unwrap();
+        let prev = last.clone();
+        *last = Some(snap.phase.clone());
+        prev
+    };
+    if prev.as_ref() == Some(&snap.phase) {
+        return;
+    }
+    // Session + lock-cycle bookkeeping around the pure mapping: a new lock
+    // cycle mints the session id and records the lock as command → result;
+    // returning to coding closes the session.
+    if matches!((prev.as_ref(), &snap.phase), (Some(Phase::Coding), Phase::ExerciseRequired)) {
+        new_session_id();
+    }
+    let events = events_for_transition(prev.as_ref(), &snap.phase, snap.prescription.as_ref());
+    for (event_type, payload) in events {
+        if event_type == "desktop_locked" {
+            // The lock is a requested operation with a distinct outcome, not
+            // just an event: command → action result → the desktop_locked fact.
+            let command_id = queue_command("desktop.lock_requested", serde_json::json!({}));
+            queue_action_result("desktop.lock_succeeded", &command_id, "succeeded");
+        }
+        queue_event(event_type, payload);
+    }
+    if matches!((prev.as_ref(), &snap.phase), (Some(Phase::Unlocked), Phase::Coding)) {
+        *SESSION_ID.lock().unwrap() = None;
+    }
+}
 
 /// Parse and sanity-check the shipped specs at startup: the model must be
 /// declared and every exercise must name a known activity.
@@ -180,7 +396,17 @@ pub fn start(app: AppHandle) {
             match HubSupervisor::start(config) {
                 Ok(mut supervisor) => {
                     let receiver = supervisor.take_receiver();
+                    // Register the app manifest before anything publishes; the
+                    // hub rejects event types it has not seen registered.
+                    if let Err(err) = supervisor.register_application(
+                        APP_ID,
+                        env!("CARGO_PKG_VERSION"),
+                        &reps_manifest(),
+                    ) {
+                        eprintln!("hub: register_application failed: {err}");
+                    }
                     *app.state::<SharedHub>().lock().unwrap() = Some(Box::new(supervisor));
+                    start_publisher(app.clone());
                     let _ = app.emit("vision-event", serde_json::json!({"kind": "hub_up"}));
                     if let Some(rx) = receiver {
                         pump_events(app, rx);
@@ -229,8 +455,7 @@ fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
                 core.session.report_progress(Progress { value, unit, satisfied });
                 let snap = crate::persist_and_snapshot(&mut core);
                 drop(core);
-                crate::print_state(&snap);
-                let _ = app.emit("snapshot", &snap);
+                crate::emit_snapshot(&app, &snap);
                 if satisfied {
                     disable_metric_async(&app);
                 }
@@ -286,6 +511,10 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
             metric_config_for(&specs, &exercise, target_reps, target_seconds)
         else {
             eprintln!("hub: no spec for exercise {exercise}; honor mode");
+            queue_event(
+                "system_error",
+                serde_json::json!({"stage": "enable_metric", "error": format!("no spec for {exercise}")}),
+            );
             let _ = app.emit(
                 "vision-fallback",
                 serde_json::json!({"reason": format!("no spec for {exercise}")}),
@@ -303,15 +532,30 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
                     cameras: camera_set.as_ref().map(|set| set.cameras.clone()),
                     config,
                 };
-                if let Err(err) = enable_on_hub(hub.as_mut(), &camera_set, &request) {
-                    eprintln!("hub: enable_metric failed: {err}");
-                    let _ = app.emit(
-                        "vision-fallback",
-                        serde_json::json!({"reason": err.to_string()}),
-                    );
+                match enable_on_hub(hub.as_mut(), &camera_set, &request) {
+                    Ok(()) => {
+                        drop(guard);
+                        queue_event("detector_started", serde_json::json!({"exercise": exercise}));
+                    }
+                    Err(err) => {
+                        drop(guard);
+                        eprintln!("hub: enable_metric failed: {err}");
+                        queue_event(
+                            "system_error",
+                            serde_json::json!({"stage": "enable_metric", "error": err.to_string()}),
+                        );
+                        let _ = app.emit(
+                            "vision-fallback",
+                            serde_json::json!({"reason": err.to_string()}),
+                        );
+                    }
                 }
             }
             None => {
+                queue_event(
+                    "system_error",
+                    serde_json::json!({"stage": "enable_metric", "error": "hub not running"}),
+                );
                 let _ = app.emit(
                     "vision-fallback",
                     serde_json::json!({"reason": "hub not running"}),
@@ -328,8 +572,12 @@ pub fn disable_metric_async(app: &AppHandle) {
         let state = app.state::<SharedHub>();
         let mut guard = state.lock().unwrap();
         if let Some(hub) = guard.as_mut() {
-            if let Err(err) = hub.disable_metric(WORKOUT_METRIC) {
-                eprintln!("hub: disable_metric failed: {err}");
+            match hub.disable_metric(WORKOUT_METRIC) {
+                Ok(()) => {
+                    drop(guard);
+                    queue_event("detector_stopped", serde_json::json!({}));
+                }
+                Err(err) => eprintln!("hub: disable_metric failed: {err}"),
             }
         }
     });
@@ -338,6 +586,8 @@ pub fn disable_metric_async(app: &AppHandle) {
 /// Honor-mode completion: the camera path failed, the user pressed Done.
 pub fn honor_complete(app: &AppHandle) -> engine::types::Snapshot {
     let clock = SystemClock;
+    // Honor mode is visible in durable history, never a silent degradation.
+    queue_event("override_used", serde_json::json!({"mode": "honor"}));
     let core_state = app.state::<crate::SharedCore>();
     let mut core = core_state.lock().unwrap();
     core.session.mark_unverified();
@@ -349,7 +599,7 @@ pub fn honor_complete(app: &AppHandle) -> engine::types::Snapshot {
     core.session.report_progress(Progress { value, unit, satisfied: true });
     let snap = crate::persist_and_snapshot(&mut core);
     drop(core);
-    let _ = app.emit("snapshot", &snap);
+    crate::emit_snapshot(app, &snap);
     disable_metric_async(app);
     snap
 }
@@ -478,5 +728,70 @@ mod tests {
     fn unknown_exercise_yields_none() {
         let specs = load_exercise_specs().unwrap();
         assert!(metric_config_for(&specs, "wallsit", 5, 0.0).is_none());
+    }
+
+    #[test]
+    fn manifest_declares_every_core_event_and_no_exposed_commands() {
+        let manifest = reps_manifest();
+        let events = manifest["events"].as_object().unwrap();
+        for required in [
+            "coding_period_started", "coding_period_expired", "workout_prescribed",
+            "desktop_locked", "detector_started", "rep_completed", "target_reached",
+            "weight_logged", "workout_completed", "detector_stopped",
+            "desktop_unlocked", "override_used", "system_error",
+        ] {
+            assert!(events.contains_key(required), "manifest missing event {required}");
+        }
+        // V1: no reps command is remotely invokable until lock/camera control
+        // has a safety story.
+        for (name, command) in manifest["commands"].as_object().unwrap() {
+            assert_eq!(command["exposed"], false, "command {name} must not be exposed");
+        }
+    }
+
+    #[test]
+    fn phase_transitions_map_to_the_v1_event_contract() {
+        use engine::types::{ExerciseKind, Phase, Prescription};
+        let rx = Prescription {
+            exercise: "squat".into(),
+            kind: ExerciseKind::Rep,
+            target_reps: 10,
+            target_seconds: 0.0,
+            default_weight: 95.0,
+        };
+        let types = |prev: Option<&Phase>, next: &Phase| -> Vec<&'static str> {
+            events_for_transition(prev, next, Some(&rx))
+                .into_iter()
+                .map(|(t, _)| t)
+                .collect()
+        };
+        // the game loop, in order
+        assert_eq!(types(None, &Phase::Coding), vec!["coding_period_started"]);
+        assert_eq!(
+            types(Some(&Phase::Coding), &Phase::ExerciseRequired),
+            vec!["coding_period_expired", "workout_prescribed", "desktop_locked"],
+        );
+        // detector_started/stopped publish at the enable/disable sites, not here
+        assert!(types(Some(&Phase::ExerciseRequired), &Phase::WorkoutActive).is_empty());
+        assert!(types(Some(&Phase::WorkoutActive), &Phase::WeightConfirmation).is_empty());
+        assert_eq!(
+            types(Some(&Phase::WeightConfirmation), &Phase::Unlocked),
+            vec!["workout_completed", "desktop_unlocked"],
+        );
+        // continuous activities (jumprope/stretch) skip weight confirmation
+        assert_eq!(
+            types(Some(&Phase::WorkoutActive), &Phase::Unlocked),
+            vec!["workout_completed", "desktop_unlocked"],
+        );
+        assert_eq!(types(Some(&Phase::Unlocked), &Phase::Coding), vec!["coding_period_started"]);
+        // prescription payload carries the exercise + targets
+        let prescribed = events_for_transition(
+            Some(&Phase::Coding),
+            &Phase::ExerciseRequired,
+            Some(&rx),
+        );
+        let (_, payload) = prescribed.iter().find(|(t, _)| *t == "workout_prescribed").unwrap();
+        assert_eq!(payload["exercise"], "squat");
+        assert_eq!(payload["targetReps"], 10);
     }
 }

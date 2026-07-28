@@ -15,7 +15,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HUB_DIR="${HUB_DIR:-$REPO_ROOT/../usb-mcp-hub}"
 OUT="$REPO_ROOT/app/src-tauri/resources/hub-bundle"
-API_VERSION="1.3"
+API_VERSION="1.4"
 
 if [[ ! -d "$HUB_DIR" ]]; then
   echo "usb-mcp-hub checkout not found at $HUB_DIR (set HUB_DIR)" >&2
@@ -43,6 +43,11 @@ cp -r "$HUB_DIR/vision/transcribe" "$OUT/vision/transcribe"
 cp "$HUB_DIR/vision/pyproject.toml" "$HUB_DIR/vision/uv.lock" "$OUT/vision/"
 find "$OUT" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 find "$OUT" -name .pytest_cache -type d -exec rm -rf {} + 2>/dev/null || true
+
+# Reps' companion screens (Workout/Calibrate/History) — hubd serves them at
+# /app/ via HUB_APP_UI_DIR (the bundled supervisor points at this copy).
+rm -rf "$REPO_ROOT/app/src-tauri/resources/companion"
+cp -r "$REPO_ROOT/companion" "$REPO_ROOT/app/src-tauri/resources/companion"
 
 # Transcript hashes pin the contract version the vendored Rust tests use.
 TRANSCRIPTS_DIR="$HUB_DIR/apps/hubd/test/contracts"

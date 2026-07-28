@@ -6,6 +6,8 @@ use crate::{EnableMetric, HubError, HubHealth, VisionEvent, VisionHub};
 
 pub struct FakeHub {
     pub calls: Vec<String>,
+    /// Wire params of every publish_event/publish_command/report_action_result.
+    pub published: Vec<serde_json::Value>,
     scripted: Vec<VisionEvent>,
     tx: mpsc::Sender<VisionEvent>,
     rx: Option<mpsc::Receiver<VisionEvent>>,
@@ -18,6 +20,7 @@ impl FakeHub {
         let (tx, rx) = mpsc::channel();
         FakeHub {
             calls: vec![],
+            published: vec![],
             scripted,
             tx,
             rx: Some(rx),
@@ -104,5 +107,40 @@ impl VisionHub for FakeHub {
 
     fn take_receiver(&mut self) -> Option<mpsc::Receiver<VisionEvent>> {
         self.rx.take()
+    }
+
+    fn register_application(
+        &mut self,
+        app_id: &str,
+        _version: &str,
+        _manifest: &serde_json::Value,
+    ) -> Result<(), HubError> {
+        self.check_fail()?;
+        self.calls.push(format!("register_application:{app_id}"));
+        Ok(())
+    }
+
+    fn publish_event(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        self.check_fail()?;
+        let event_type = params["type"].as_str().unwrap_or("?");
+        self.calls.push(format!("publish_event:{event_type}"));
+        self.published.push(params.clone());
+        Ok(())
+    }
+
+    fn publish_command(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        self.check_fail()?;
+        let command_type = params["type"].as_str().unwrap_or("?");
+        self.calls.push(format!("publish_command:{command_type}"));
+        self.published.push(params.clone());
+        Ok(())
+    }
+
+    fn report_action_result(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        self.check_fail()?;
+        let result_type = params["type"].as_str().unwrap_or("?");
+        self.calls.push(format!("report_action_result:{result_type}"));
+        self.published.push(params.clone());
+        Ok(())
     }
 }
