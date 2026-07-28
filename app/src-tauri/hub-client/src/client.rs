@@ -156,6 +156,31 @@ impl VisionHub for HubClient {
     fn take_receiver(&mut self) -> Option<mpsc::Receiver<VisionEvent>> {
         self.events_rx.take()
     }
+
+    fn register_application(
+        &mut self,
+        app_id: &str,
+        version: &str,
+        manifest: &serde_json::Value,
+    ) -> Result<(), HubError> {
+        self.rpc(
+            "register_application",
+            serde_json::json!({"appId": app_id, "version": version, "manifest": manifest}),
+        )
+        .map(|_| ())
+    }
+
+    fn publish_event(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        self.rpc("publish_event", params.clone()).map(|_| ())
+    }
+
+    fn publish_command(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        self.rpc("publish_command", params.clone()).map(|_| ())
+    }
+
+    fn report_action_result(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        self.rpc("report_action_result", params.clone()).map(|_| ())
+    }
 }
 
 fn set_read_timeout(

@@ -14,3 +14,4 @@ vision/tests/fixtures/videos/*
 # YouTube debug clips (scripts/fetch_youtube.py) — regenerate locally, never commit.
 vision/tests/fixtures/videos/youtube/
 app/src-tauri/resources/hub-bundle/
+app/src-tauri/resources/companion/

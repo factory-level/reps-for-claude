@@ -114,6 +114,25 @@ pub trait VisionHub: Send {
     fn health(&mut self) -> Result<HubHealth, HubError>;
     /// The event stream; `None` after the first call.
     fn take_receiver(&mut self) -> Option<mpsc::Receiver<VisionEvent>>;
+
+    // FieldLab V1 (API 1.4). Required, not defaulted — a silent default would
+    // let a real client no-op the app's durable history (same reasoning as
+    // add_camera above).
+
+    /// Register the app manifest (event + command schemas) with the hub.
+    fn register_application(
+        &mut self,
+        app_id: &str,
+        version: &str,
+        manifest: &serde_json::Value,
+    ) -> Result<(), HubError>;
+    /// Publish an app-defined semantic event into durable hub history.
+    /// `params` is the wire shape: {appId, type, payload?, sessionId?, ...}.
+    fn publish_event(&mut self, params: &serde_json::Value) -> Result<(), HubError>;
+    /// Record a requested operation (distinct from its outcome).
+    fn publish_command(&mut self, params: &serde_json::Value) -> Result<(), HubError>;
+    /// Record a command/action outcome.
+    fn report_action_result(&mut self, params: &serde_json::Value) -> Result<(), HubError>;
 }
 
 /// Convert a client-API push frame into a `VisionEvent`.

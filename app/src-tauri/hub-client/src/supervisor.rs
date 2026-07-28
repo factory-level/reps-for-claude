@@ -91,6 +91,12 @@ impl HubSupervisorConfig {
                         plugin_src.display()
                     ),
                 ),
+                // Companion screens staged beside the bundle (hubd ignores the
+                // env when the directory is absent).
+                (
+                    "HUB_APP_UI_DIR".into(),
+                    resources_dir.join("companion").display().to_string(),
+                ),
             ],
         }
     }
@@ -110,13 +116,21 @@ impl HubSupervisorConfig {
                 "@hub/hubd".into(),
                 "start".into(),
             ],
-            env: vec![(
-                "HUB_PLUGIN_ARGS".into(),
-                format!(
-                    "--plugin-path {} --plugin reps_vision.hub_plugin.plugin:RepsVisionPlugin",
-                    plugin_path.display()
+            env: vec![
+                (
+                    "HUB_PLUGIN_ARGS".into(),
+                    format!(
+                        "--plugin-path {} --plugin reps_vision.hub_plugin.plugin:RepsVisionPlugin",
+                        plugin_path.display()
+                    ),
                 ),
-            )],
+                // Companion screens (Workout / Calibrate / History) ship with
+                // reps; hubd hosts them under /app/.
+                (
+                    "HUB_APP_UI_DIR".into(),
+                    repo_root.join("companion").display().to_string(),
+                ),
+            ],
         }
     }
 }
@@ -391,6 +405,32 @@ impl VisionHub for HubSupervisor {
 
     fn take_receiver(&mut self) -> Option<mpsc::Receiver<VisionEvent>> {
         self.events_rx.take()
+    }
+
+    fn register_application(
+        &mut self,
+        app_id: &str,
+        version: &str,
+        manifest: &serde_json::Value,
+    ) -> Result<(), HubError> {
+        let (app_id, version, manifest) =
+            (app_id.to_string(), version.to_string(), manifest.clone());
+        self.with_client(move |client| client.register_application(&app_id, &version, &manifest))
+    }
+
+    fn publish_event(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        let params = params.clone();
+        self.with_client(move |client| client.publish_event(&params))
+    }
+
+    fn publish_command(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        let params = params.clone();
+        self.with_client(move |client| client.publish_command(&params))
+    }
+
+    fn report_action_result(&mut self, params: &serde_json::Value) -> Result<(), HubError> {
+        let params = params.clone();
+        self.with_client(move |client| client.report_action_result(&params))
     }
 }
 
