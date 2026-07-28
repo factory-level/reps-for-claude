@@ -1,16 +1,16 @@
 {
-  "hubCommit": "4bc25d34aa3017c4dce128e8624193d8e3f23df8",
+  "hubCommit": "ce6385d3e2535ee0e8bec6e8c47392fd33310956",
   "apiVersion": "1.3",
   "nodeEngine": ">=22.5",
   "artifactSha256s": {
-    "hubd.mjs": "1da9aaba73018ce4d8cbb541ccb4a995c6d277210b4e998054b977fb31aa6ecd",
+    "hubd.mjs": "64446bb3ff65e9315625596b80af84386399f1265e26bc4cd01da8404f88c8ee",
     "public/app.js": "8e4eb0da8f21fd8c400a85a1b21bcec40fead282739fac1ab1435ec28f4fcf7a",
     "public/index.html": "d807d13065b6a157b7f8ca780f94e23ac7f2628674d687ede38cb0f81e86e519",
     "vision/host/contract.py": "e3ae4819d40b249a97266abebf7aef58e94afc06326818238030543733d40944",
     "vision/host/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "vision/host/models.py": "672539f9150f4e13f09f04063a31a85de9e8ad0b90bec4c674e9a2bf66ee2d33",
     "vision/host/registry.py": "fef8640920985400a19e73a2762b19775553eb546c81991219c1046f6bb47d43",
-    "vision/host/server.py": "63a28ba3705911d76e1b162b7c7cef9b71b6e4fadb4b5afd968ba089364ea0d4",
+    "vision/host/server.py": "b67a418aa9630b8dfa3f81674ba0ea7437c71592615d6c18356418daa0b39c0e",
     "vision/plugins/frame_stats/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "vision/plugins/frame_stats/plugin.py": "1b43646864560756d3a50b500dbf23e2ddb5acb612d34bb30f208fdb72928d9e",
     "vision/plugins/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -24,8 +24,10 @@
     "vision/plugins/sam_regions/plugin.py": "a722012eb86c7694e6f5e4628885aee9412bcac8526c1114ab43effb0405402f",
     "vision/plugins/yolo/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "vision/plugins/yolo/plugin.py": "2526053f79ad8a3777b2daef75157222b0bc44a45507bd2aa5f346f8833b3457",
-    "vision/pyproject.toml": "d0d3acf8e311f5ea1bc3c1351e22e1eebc86f2aab96a196023b0a2cd43c1352b",
-    "vision/uv.lock": "0958843c9afddaf7d707a952797655302ca0ba04f0d7aaae3f143744f1034200"
+    "vision/pyproject.toml": "f0f62b831b6d24ae68cff99af372b3ce2844e036a4f40833758348665a944641",
+    "vision/transcribe/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vision/transcribe/whisper_cli.py": "421084a1bf0b216943fcd329c2acd97913acd3778e7fc8a65058216f1c869cdb",
+    "vision/uv.lock": "fbd0c69a1e92a9daf8c5086de4b3156aaed1706e704c6cf0506590a8b95b2267"
   },
   "transcriptSha256s": {
     "v1.1/camera-array.json": "6103cf7ae4452f0603e974972ca2489485da6bce13e0d230f6573eb9ed028374",

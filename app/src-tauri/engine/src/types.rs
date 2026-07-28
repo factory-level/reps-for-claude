@@ -58,6 +58,28 @@ pub struct SetRecord {
     pub verified: bool,
 }
 
+/// One line of the day's routine for the UI (camelCase).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayItem {
+    pub name: String,
+    pub label: String,
+    pub kind: String, // "lift" | "jumprope" | "stretch"
+    pub unit: String, // "reps" | "seconds"
+    pub target: f64,
+    pub done: u32,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayPlan {
+    pub items: Vec<DayItem>,
+    pub sets_done: u32,
+    pub sets_total: u32,
+    pub complete: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -69,6 +91,8 @@ pub struct Snapshot {
     pub capacity_limit: u32,
     pub rotation: Vec<String>,
     pub pointer: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub day: Option<DayPlan>,
 }
 
 #[cfg(test)]
@@ -92,6 +116,7 @@ mod tests {
             capacity_limit: 20,
             rotation: vec!["bench".into()],
             pointer: 0,
+            day: None,
         };
         let v: serde_json::Value = serde_json::to_value(&snap).unwrap();
         assert!(v.get("remainingSeconds").is_some());

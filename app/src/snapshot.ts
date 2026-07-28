@@ -19,6 +19,25 @@ export interface Progress {
   satisfied: boolean;
 }
 
+// One line of the day's routine (a lift, jump-rope, or a stretch) with how many
+// of its sets/rounds are done. "One set per lock" decrements `done` each time.
+export interface DayItem {
+  name: string;
+  label: string;
+  kind: "lift" | "jumprope" | "stretch";
+  unit: "reps" | "seconds";
+  target: number; // reps per set, or seconds per round/hold
+  done: number; // sets/rounds/holds completed
+  total: number; // sets/rounds/holds required today
+}
+
+export interface DayPlan {
+  items: DayItem[];
+  setsDone: number; // completed across all items
+  setsTotal: number; // required across all items
+  complete: boolean; // every item done → day cleared
+}
+
 export interface Snapshot {
   phase: Phase;
   remainingSeconds: number;
@@ -28,4 +47,7 @@ export interface Snapshot {
   capacityLimit: number;
   rotation: string[];
   pointer: number;
+  // Present once the routine.json plan is wired; optional so the UI degrades
+  // gracefully before then.
+  day?: DayPlan | null;
 }

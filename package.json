@@ -1,0 +1,13 @@
+{
+  "name": "reps-for-claude",
+  "private": true,
+  "description": "Root passthrough — the Tauri app lives in app/. These scripts forward there so you can run from the repo root.",
+  "scripts": {
+    "dev": "npm run --prefix app dev",
+    "tauri": "npm run --prefix app tauri --",
+    "build": "npm run --prefix app build",
+    "preview": "npm run --prefix app preview",
+    "test": "npm run --prefix app test",
+    "install:app": "npm --prefix app install"
+  }
+}

@@ -2,6 +2,7 @@
 //! No tauri dependency — everything here tests with `cargo test -p engine`.
 
 pub mod clock;
+pub mod plan;
 pub mod session;
 pub mod store;
 pub mod timer;

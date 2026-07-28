@@ -286,7 +286,7 @@ mod tests {
     // stay in sync with what the vision sidecar actually knows how to
     // detect, or the app will prescribe an exercise the detector rejects.
     const KNOWN_VISION_REP_EXERCISES: &[&str] =
-        &["bench", "curl", "overhead", "pullup", "pushup", "row", "squat"];
+        &["bench", "curl", "deadlift", "incline_bench", "overhead", "pullup", "pushup", "row", "squat"];
     const KNOWN_VISION_CONTINUOUS_EXERCISES: &[&str] = &["jumprope", "stretch"];
 
     #[test]

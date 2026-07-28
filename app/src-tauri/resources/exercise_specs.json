@@ -14,30 +14,38 @@
       "activity": "lift",
       "exercise": { "name": "bench", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 95.0, "upAbove": 150.0, "minVisibility": 0.5 }
     },
+    "incline_bench": {
+      "activity": "lift",
+      "exercise": { "name": "incline_bench", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 150.0, "upAbove": 160.0, "minVisibility": 0.5 }
+    },
     "overhead": {
       "activity": "lift",
-      "exercise": { "name": "overhead", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 95.0, "upAbove": 155.0, "minVisibility": 0.5 }
+      "exercise": { "name": "overhead", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 30.0, "upAbove": 140.0, "minVisibility": 0.5 }
     },
     "curl": {
       "activity": "lift",
-      "exercise": { "name": "curl", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 60.0, "upAbove": 150.0, "minVisibility": 0.5 }
+      "exercise": { "name": "curl", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 135.0, "upAbove": 165.0, "minVisibility": 0.5 }
     },
     "pullup": {
       "activity": "lift",
-      "exercise": { "name": "pullup", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 75.0, "upAbove": 160.0, "minVisibility": 0.5 }
+      "exercise": { "name": "pullup", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 140.0, "upAbove": 168.0, "minVisibility": 0.4 }
     },
     "row": {
       "activity": "lift",
-      "exercise": { "name": "row", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 90.0, "upAbove": 150.0, "minVisibility": 0.5 }
+      "exercise": { "name": "row", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 60.0, "upAbove": 85.0, "minVisibility": 0.4 }
     },
     "squat": {
       "activity": "lift",
-      "exercise": { "name": "squat", "joints": ["hip", "knee", "ankle"], "downBelow": 110.0, "upAbove": 160.0, "minVisibility": 0.5 }
+      "exercise": { "name": "squat", "joints": ["hip", "knee", "ankle"], "downBelow": 145.0, "upAbove": 165.0, "minVisibility": 0.5 }
+    },
+    "deadlift": {
+      "activity": "lift",
+      "exercise": { "name": "deadlift", "joints": ["shoulder", "hip", "knee"], "downBelow": 145.0, "upAbove": 175.0, "minVisibility": 0.4 }
     },
     "jumprope": {
       "activity": "jumprope",
       "targetSeconds": 60.0,
-      "bounceThreshold": 0.015,
+      "bounceThreshold": 0.004,
       "resetAfter": 2.0
     },
     "stretch": {

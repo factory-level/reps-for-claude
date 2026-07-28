@@ -1,0 +1,631 @@
+/* ============================================================================
+   REPS COCKPIT HUD — a mech-pilot targeting interface for a pose-tracking
+   workout enforcer. Instrument glass, semantic color-coding, radial reticles.
+     cyan  = data / chrome / hairlines (neutral instrument)
+     green = the tracked body · rep progress · nominal (the locked target)
+     amber = caution: the LOCK gate · draining time · honor mode
+   Type is all-monospace (offline-reliable); identity is carried by the
+   instruments, not the font.
+   ========================================================================== */
+/* let the corner-bracket leg length animate (the lock "seal"); engines without
+   @property just fade the frame in instead. */
+@property --bkl {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 20px;
+}
+
+.bigscreen,
+.lock-overlay,
+.stream-viz,
+.debug-toggle {
+  --bg: #05090d;
+  --bg-grid: #0a1620;
+  --glass: #081119;
+  --panel: #0a141b;
+  --line: #16323d;
+  --line-soft: #0e2029;
+  --cyan: #3fe0ff;
+  --cyan-dim: #2b7186;
+  --green: #58ff8e;
+  --green-dim: #2f6b46;
+  --amber: #ffb03a;
+  --amber-dim: #6f4f1e;
+  --alert: #ff5d5d;
+  --text: #cfe2ea;
+  --muted: #5f7a86;
+  --mono: ui-monospace, "DejaVu Sans Mono", "JetBrains Mono", "SF Mono",
+    "Cascadia Mono", Consolas, monospace;
+}
+
+/* ---- shared instrument primitives ---------------------------------------- */
+
+/* telemetry label: dim, spaced, uppercase, with a leading tick */
+.kicker {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.28em;
+  color: var(--cyan-dim);
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+}
+.kicker::before {
+  content: "";
+  width: 0.5em;
+  height: 0.5em;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.muted { color: var(--muted); }
+
+/* corner targeting brackets, pure CSS (8 layered gradients = 4 L's).
+   --bk color, --bkl leg length, --bkw thickness are tunable per use. */
+.framed {
+  --bk: var(--cyan);
+  --bkl: 20px;
+  --bkw: 2px;
+  background-image:
+    linear-gradient(var(--bk), var(--bk)), linear-gradient(var(--bk), var(--bk)),
+    linear-gradient(var(--bk), var(--bk)), linear-gradient(var(--bk), var(--bk)),
+    linear-gradient(var(--bk), var(--bk)), linear-gradient(var(--bk), var(--bk)),
+    linear-gradient(var(--bk), var(--bk)), linear-gradient(var(--bk), var(--bk));
+  background-repeat: no-repeat;
+  background-size:
+    var(--bkl) var(--bkw), var(--bkw) var(--bkl),
+    var(--bkl) var(--bkw), var(--bkw) var(--bkl),
+    var(--bkl) var(--bkw), var(--bkw) var(--bkl),
+    var(--bkl) var(--bkw), var(--bkw) var(--bkl);
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
+}
+
+/* ============================================================================
+   STREAM VISUALIZER — the targeting view
+   ========================================================================== */
+.stream-viz {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  width: 100%;
+  font-family: var(--mono);
+}
+
+.stream-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--bg);
+  padding: 8px;
+  --bk: var(--green);
+  --bkl: 30px;
+}
+.stream-stage canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 2px;
+  /* faint targeting grid over the pose feed */
+  box-shadow: inset 0 0 0 1px var(--line-soft), inset 0 0 90px rgba(0, 0, 0, 0.55);
+}
+/* thin crosshair through the frame center */
+.stream-stage::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--line-soft), var(--line-soft)) center / 1px 22px no-repeat,
+    linear-gradient(var(--line-soft), var(--line-soft)) center / 22px 1px no-repeat;
+  opacity: 0.6;
+}
+
+/* status pill, top-left of the frame */
+.stream-status {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  padding: 0.28rem 0.6rem 0.28rem 0.55rem;
+  background: rgba(5, 9, 13, 0.72);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.stream-status .lamp {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.stream-status.live .lamp { background: var(--green); box-shadow: 0 0 10px var(--green); animation: lamp 1.5s infinite; }
+.stream-status.live { border-color: var(--green-dim); color: var(--green); }
+.stream-status.off .lamp { background: var(--alert); box-shadow: 0 0 10px var(--alert); }
+.stream-status.off { border-color: #5a2323; color: #ff9a9a; }
+@keyframes lamp { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* live joint-angle readout, top-right */
+.stream-angle {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  text-align: right;
+}
+.stream-angle .val {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--cyan);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 14px rgba(63, 224, 255, 0.45);
+  line-height: 1;
+}
+.stream-angle .lbl { font-size: 0.6rem; letter-spacing: 0.24em; color: var(--cyan-dim); }
+/* attitude bar under the angle: fills 0–180° */
+.stream-attitude {
+  width: 118px;
+  height: 4px;
+  margin-top: 5px;
+  margin-left: auto;
+  background: var(--line-soft);
+  position: relative;
+  overflow: hidden;
+}
+.stream-attitude i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+}
+
+.stream-fallback {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2;
+  color: var(--amber);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  border: 1px solid var(--amber-dim);
+  padding: 0.24rem 0.55rem;
+  background: rgba(5, 9, 13, 0.7);
+}
+
+/* ---- instrument strip: the reticle + telemetry log ----------------------- */
+.stream-instruments {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+/* the RETICLE — the signature. rep tally inside a filling tick ring. */
+.reticle {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  flex: none;
+}
+.reticle svg { width: 100%; height: 100%; display: block; transform: rotate(-90deg); }
+.reticle .ring-track { fill: none; stroke: var(--line); stroke-width: 3; }
+.reticle .ring-ticks {
+  fill: none;
+  stroke: var(--cyan-dim);
+  stroke-width: 6;
+  stroke-dasharray: 1.2 6.4; /* short ticks around the dial */
+  opacity: 0.6;
+}
+.reticle .ring-fill {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(88, 255, 142, 0.6));
+  transition: stroke-dashoffset 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.reticle-core {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
+}
+.reticle-core .count {
+  font-size: 2.9rem;
+  font-weight: 800;
+  color: var(--green);
+  line-height: 0.85;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 18px rgba(88, 255, 142, 0.4);
+}
+.reticle-core .of {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.reticle-core .unit { font-size: 0.56rem; letter-spacing: 0.28em; color: var(--cyan-dim); margin-top: 0.15rem; }
+/* the arcade "lock" beat when a rep confirms */
+.reticle.locked .ring-fill { animation: none; }
+.reticle.locked .reticle-core .count { animation: rep-lock 0.55s ease-out; }
+.reticle.locked::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--green);
+  animation: rep-ping 0.55s ease-out forwards;
+}
+@keyframes rep-lock {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.22); color: #eafff2; text-shadow: 0 0 26px var(--green); }
+  100% { transform: scale(1); }
+}
+@keyframes rep-ping {
+  0% { opacity: 0.9; transform: scale(0.9); }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+
+/* telemetry log */
+.stream-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  align-content: flex-start;
+  overflow: hidden;
+}
+.stream-feed .log-head { color: var(--cyan-dim); letter-spacing: 0.2em; font-size: 0.62rem; margin-bottom: 0.15rem; }
+.stream-feed li.line {
+  color: var(--green);
+  display: flex;
+  gap: 0.5rem;
+  animation: log-in 0.3s ease-out;
+}
+.stream-feed li.line::before { content: "›"; color: var(--cyan); }
+.stream-feed li.muted { color: var(--muted); }
+.stream-feed li.muted::before { content: "›"; color: var(--line); }
+@keyframes log-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+
+/* ============================================================================
+   BIG SCREEN — the cockpit
+   ========================================================================== */
+.bigscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  color: var(--text);
+  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1rem, 2.6vw, 2.4rem);
+  gap: 1.2rem;
+  background:
+    radial-gradient(1100px 520px at 28% -12%, rgba(63, 224, 255, 0.06), transparent 70%),
+    linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0 / 100% 40px,
+    var(--bg);
+}
+
+.bigscreen-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1rem;
+}
+.bigscreen-title { display: flex; flex-direction: column; gap: 0.35rem; }
+.bigscreen-title h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.6rem);
+  line-height: 0.92;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #eaf6fb;
+}
+.bigscreen-title .target {
+  color: var(--green);
+  font-size: 1rem;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+}
+.bigscreen-title .target b { color: #eafff2; font-weight: 700; }
+
+.bigscreen-daymeter { min-width: 300px; display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end; }
+.daymeter-row { display: flex; align-items: baseline; gap: 0.6rem; font-variant-numeric: tabular-nums; }
+.daymeter-row .pct { font-size: 1.6rem; font-weight: 800; color: var(--cyan); line-height: 1; }
+.daymeter-row .frac { color: var(--muted); font-size: 0.82rem; letter-spacing: 0.1em; }
+.daymeter-row .frac b { color: var(--text); }
+.daybar {
+  width: 300px;
+  height: 14px;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+}
+.daybar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green-dim), var(--green));
+  box-shadow: 0 0 12px rgba(88, 255, 142, 0.5);
+  transition: width 0.5s ease;
+}
+/* tick notches over the day bar */
+.daybar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--bg) calc(10% - 1px) 10%);
+  pointer-events: none;
+}
+.daymeter.complete .daybar-fill { background: linear-gradient(90deg, var(--cyan-dim), var(--cyan)); box-shadow: 0 0 14px var(--cyan); }
+
+.bigscreen-body { flex: 1; display: grid; grid-template-columns: 1.7fr 1fr; gap: 1.2rem; min-height: 0; }
+.bigscreen-stage { min-height: 0; display: flex; }
+.bigscreen-stage .stream-viz { justify-content: flex-start; }
+
+/* the routine manifest */
+.bigscreen-plan {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  padding: 1rem 1.05rem 1.1rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.plan-group { margin-top: 0.9rem; }
+.plan-group:first-of-type { margin-top: 0.5rem; }
+.plan-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.6rem;
+  letter-spacing: 0.22em;
+  color: var(--cyan-dim);
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+.plan-group-head .tally { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bigscreen-plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.bigscreen-plan li {
+  display: grid;
+  grid-template-columns: 1.2rem 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.42rem 0.5rem;
+  border-left: 2px solid transparent;
+  font-size: 0.86rem;
+}
+.bigscreen-plan li.active {
+  border-left-color: var(--green);
+  background: linear-gradient(90deg, rgba(88, 255, 142, 0.1), transparent);
+  color: #eafff2;
+}
+.bigscreen-plan li.done { color: var(--muted); }
+.bigscreen-plan li.done .plan-label { text-decoration: line-through; text-decoration-color: var(--green-dim); }
+.plan-icon { text-align: center; font-size: 0.9rem; color: var(--cyan-dim); }
+.bigscreen-plan li.active .plan-icon { color: var(--green); }
+.bigscreen-plan li.done .plan-icon { color: var(--green-dim); }
+.plan-count { font-variant-numeric: tabular-nums; color: var(--green); letter-spacing: 0.04em; }
+.bigscreen-plan li.done .plan-count { color: var(--green-dim); }
+.plan-count em { color: var(--muted); font-style: normal; }
+
+.bigscreen-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.9rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.foot-status { display: inline-flex; align-items: center; gap: 0.55rem; }
+.foot-status .lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: lamp 1.5s infinite; }
+.foot-dev { display: inline-flex; gap: 0.5rem; }
+.foot-dev button {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--cyan-dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.foot-dev button:hover { color: var(--cyan); border-color: var(--cyan-dim); }
+
+/* the primary HUD action button (confirm weight / engage) */
+.hud-btn {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #06120a;
+  background: var(--green);
+  border: none;
+  padding: 0.85rem 2rem;
+  cursor: pointer;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  box-shadow: 0 0 26px rgba(88, 255, 142, 0.4);
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+.hud-btn:hover { filter: brightness(1.1); }
+.hud-btn:active { transform: translateY(1px); }
+.hud-btn.amber { background: var(--amber); color: #1a1204; box-shadow: 0 0 26px rgba(255, 176, 58, 0.4); }
+
+/* ============================================================================
+   LOCK — the "ACCESS LOCKED" bulkhead
+   ========================================================================== */
+.lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  color: var(--text);
+  background:
+    radial-gradient(900px 500px at 50% 42%, rgba(255, 176, 58, 0.06), transparent 70%),
+    repeating-linear-gradient(45deg, rgba(255, 176, 58, 0.03) 0 14px, transparent 14px 28px),
+    rgba(4, 7, 10, 0.96);
+  backdrop-filter: blur(7px);
+}
+.lock-card {
+  position: relative;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  padding: clamp(2rem, 5vw, 3.4rem) clamp(2.4rem, 7vw, 4.6rem);
+  --bk: var(--amber);
+  --bkl: 34px;
+  --bkw: 2px;
+}
+.lock-card.seal { animation: seal 0.5s ease-out; }
+@keyframes seal { from { --bkl: 0px; opacity: 0.4; } to { --bkl: 34px; opacity: 1; } }
+
+.lock-kicker {
+  letter-spacing: 0.42em;
+  color: var(--amber);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7em;
+}
+.lock-kicker::before,
+.lock-kicker::after { content: ""; width: 26px; height: 1px; background: var(--amber-dim); }
+.lock-exercise {
+  font-size: clamp(2.4rem, 6.5vw, 4.6rem);
+  margin: 0.2rem 0 0;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #f4faff;
+}
+.lock-target {
+  color: var(--green);
+  font-size: 1.15rem;
+  letter-spacing: 0.16em;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.lock-target b { color: #eafff2; }
+.lock-remaining {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  margin: 0.2rem 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.lock-remaining b { color: var(--amber); }
+.lock-card .hud-btn { margin-top: 1.2rem; }
+
+/* hourglass — restyled as an amber caution instrument */
+.hourglass { filter: drop-shadow(0 0 18px rgba(255, 176, 58, 0.3)); }
+.hg-cap { fill: #6a5a3a; }
+.hg-glass { fill: rgba(255, 176, 58, 0.05); stroke: var(--amber); stroke-width: 2; }
+.hg-sand { fill: var(--amber); }
+.hg-sand-top { animation: sand-drain 6s ease-in-out infinite; transform-origin: center bottom; }
+.hg-sand-bot { animation: sand-fill 6s ease-in-out infinite; transform-origin: center bottom; }
+.hg-stream { fill: var(--amber); animation: stream-blink 0.5s steps(2) infinite; }
+@keyframes sand-drain { 0% { transform: translateY(0); } 90%, 100% { transform: translateY(50px); } }
+@keyframes sand-fill { 0% { transform: translateY(50px); } 90%, 100% { transform: translateY(0); } }
+@keyframes stream-blink { 0% { opacity: 1; } 100% { opacity: 0.3; } }
+
+/* ============================================================================
+   DEBUG MODE TOGGLE — dev-only, floats above every screen
+   ========================================================================== */
+.debug-toggle {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  background: rgba(5, 9, 13, 0.9);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
+.debug-toggle .dbg-tag {
+  letter-spacing: 0.2em;
+  color: var(--amber);
+  font-weight: 700;
+}
+.debug-toggle button {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 0.28rem 0.6rem;
+  cursor: pointer;
+}
+.debug-toggle button:hover { color: var(--text); border-color: var(--cyan-dim); }
+.debug-toggle button.on {
+  color: #06120a;
+  background: var(--cyan);
+  border-color: var(--cyan);
+  font-weight: 700;
+}
+.debug-toggle .dbg-phase {
+  color: var(--cyan-dim);
+  letter-spacing: 0.08em;
+  min-width: 8ch;
+}
+.debug-toggle button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* ---- accessibility ------------------------------------------------------- */
+.hud-btn:focus-visible,
+.foot-dev button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stream-status.live .lamp,
+  .foot-status .lamp,
+  .hg-sand-top,
+  .hg-sand-bot,
+  .hg-stream,
+  .lock-card.seal,
+  .reticle.locked .reticle-core .count,
+  .reticle.locked::after,
+  .stream-feed li.line { animation: none; }
+  .reticle .ring-fill { transition: none; }
+}
+
+/* ---- responsive: narrow the cockpit to a single column ------------------- */
+@media (max-width: 900px) {
+  .bigscreen-body { grid-template-columns: 1fr; }
+  .bigscreen-head { flex-direction: column; gap: 1rem; }
+  .bigscreen-daymeter { align-items: flex-start; }
+  .daybar { width: 100%; }
+}

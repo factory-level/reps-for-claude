@@ -14,6 +14,45 @@ use crate::{
 
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 const RESTART_BACKOFF: Duration = Duration::from_millis(500);
+/// hubd's default primary listen port. The app never overrides it, so a stale
+/// process bound here at launch is always a leaked hub from a prior run
+/// (e.g. a `tauri dev` hot-reload that hard-killed the app before Drop ran).
+const HUB_PORT: u16 = 8443;
+
+/// True if something is currently listening on `127.0.0.1:port`.
+fn port_in_use(port: u16) -> bool {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+}
+
+/// Before spawning our own hubd, free the hub port if a leaked hub still holds
+/// it — otherwise the new hubd dies on EADDRINUSE, never signals READY, and the
+/// app silently falls back to honor mode after the ready timeout. Only the
+/// process on the app's own hub port is signaled. No-op when the port is free.
+fn free_stale_hub_port(port: u16) {
+    if !port_in_use(port) {
+        return;
+    }
+    eprintln!("hub: port {port} already in use — clearing a leaked hub before starting");
+    #[cfg(unix)]
+    {
+        // `fuser -k <port>/tcp` SIGKILLs whatever holds the port; the hub is
+        // the only thing that ever binds it in this app.
+        let _ = Command::new("fuser")
+            .arg("-k")
+            .arg(format!("{port}/tcp"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    for _ in 0..30 {
+        if !port_in_use(port) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    eprintln!("hub: warning — port {port} still in use after cleanup; hubd may fail to start");
+}
 
 pub struct HubSupervisorConfig {
     /// Directory of the usb-mcp-hub checkout or bundle.
@@ -128,6 +167,8 @@ impl HubSupervisor {
         for (key, value) in &self.config.env {
             command.env(key, value);
         }
+        // Clear a leaked hub from a previous run so we don't die on EADDRINUSE.
+        free_stale_hub_port(HUB_PORT);
         // New process group so drop can signal hubd (and, via its own
         // shutdown handler, vision-host) without touching our group.
         #[cfg(unix)]
@@ -350,5 +391,31 @@ impl VisionHub for HubSupervisor {
 
     fn take_receiver(&mut self) -> Option<mpsc::Receiver<VisionEvent>> {
         self.events_rx.take()
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::{free_stale_hub_port, port_in_use};
+    use std::net::TcpListener;
+
+    #[test]
+    fn port_in_use_tracks_a_live_listener() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(port_in_use(port), "a bound listener should read as in-use");
+        drop(listener);
+        assert!(!port_in_use(port), "a released port should read as free");
+    }
+
+    #[test]
+    fn free_stale_hub_port_is_a_noop_when_free() {
+        // Grab a port then release it so nothing is listening; the preflight
+        // must return immediately without trying to kill anything.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        free_stale_hub_port(port); // no panic, no hang
+        assert!(!port_in_use(port));
     }
 }

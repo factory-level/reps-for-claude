@@ -37,6 +37,9 @@ cp -r "$HUB_DIR/apps/hubd/public" "$OUT/public"
 mkdir -p "$OUT/vision"
 cp -r "$HUB_DIR/vision/host" "$OUT/vision/host"
 cp -r "$HUB_DIR/vision/plugins" "$OUT/vision/plugins"
+# hubd's whisper transcriber spawns `uv run python -m transcribe.whisper_cli`
+# from the vision dir, so the module has to ship with the bundle.
+cp -r "$HUB_DIR/vision/transcribe" "$OUT/vision/transcribe"
 cp "$HUB_DIR/vision/pyproject.toml" "$HUB_DIR/vision/uv.lock" "$OUT/vision/"
 find "$OUT" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 find "$OUT" -name .pytest_cache -type d -exec rm -rf {} + 2>/dev/null || true

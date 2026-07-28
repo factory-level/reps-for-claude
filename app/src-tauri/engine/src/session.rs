@@ -2,6 +2,7 @@
 //! CODING → EXERCISE_REQUIRED → WORKOUT_ACTIVE → WEIGHT_CONFIRMATION → UNLOCKED → CODING.
 //! Pure: driven by tick()/commands with explicit time, no threads, no IO.
 
+use crate::plan::DailyPlan;
 use crate::timer::CodingTimer;
 use crate::types::{ExerciseKind, Phase, Prescription, Progress, SetRecord, Snapshot};
 use crate::workout::WorkoutEngine;
@@ -10,6 +11,10 @@ pub struct Session {
     phase: Phase,
     timer: CodingTimer,
     workout: WorkoutEngine,
+    // When set (from routine.json), the daily plan drives prescription +
+    // completion ("one set per lock" until the day clears). Otherwise the
+    // legacy infinite rotation (workout) is used.
+    plan: Option<DailyPlan>,
     prescription: Option<Prescription>,
     progress: Option<Progress>,
     pending_record: Option<SetRecord>,
@@ -22,11 +27,21 @@ impl Session {
             phase: Phase::Coding,
             timer,
             workout,
+            plan: None,
             prescription: None,
             progress: None,
             pending_record: None,
             verified: true,
         }
+    }
+
+    /// Drive prescription from a daily routine plan instead of the rotation.
+    pub fn set_plan(&mut self, plan: DailyPlan) {
+        self.plan = Some(plan);
+    }
+
+    pub fn plan(&self) -> Option<&DailyPlan> {
+        self.plan.as_ref()
     }
 
     /// Honor-mode: the set completing now was not camera-verified. Resets
@@ -43,8 +58,24 @@ impl Session {
     pub fn tick(&mut self, now: f64, today: &str) -> bool {
         if self.phase == Phase::Coding && self.timer.expired(now) {
             self.timer.stop();
-            self.prescription = self.workout.prescribe(today);
             self.progress = None;
+            if let Some(plan) = self.plan.as_mut() {
+                plan.roll_date(today);
+                match plan.prescribe() {
+                    Some(rx) => {
+                        self.prescription = Some(rx);
+                        self.phase = Phase::ExerciseRequired;
+                        return true;
+                    }
+                    // Day complete: don't lock — re-arm the timer and stay coding.
+                    None => {
+                        self.prescription = None;
+                        self.timer.start(now);
+                        return false;
+                    }
+                }
+            }
+            self.prescription = self.workout.prescribe(today);
             self.phase = Phase::ExerciseRequired;
             return true;
         }
@@ -70,8 +101,13 @@ impl Session {
             Some(ExerciseKind::Rep) => self.phase = Phase::WeightConfirmation,
             Some(ExerciseKind::Continuous) => {
                 let rx = self.prescription.as_ref().unwrap();
+                let date = self
+                    .plan
+                    .as_ref()
+                    .map(|p| p.date().to_string())
+                    .unwrap_or_else(|| self.workout.capacity_date().to_string());
                 self.pending_record = Some(SetRecord {
-                    date: self.workout.capacity_date().to_string(),
+                    date: date.clone(),
                     exercise: rx.exercise.clone(),
                     kind: rx.kind,
                     reps: 0,
@@ -80,8 +116,11 @@ impl Session {
                     verified: self.verified,
                 });
                 self.verified = true;
-                let date = self.workout.capacity_date().to_string();
-                self.workout.complete(&date);
+                if let Some(plan) = self.plan.as_mut() {
+                    plan.complete();
+                } else {
+                    self.workout.complete(&date);
+                }
                 self.phase = Phase::Unlocked;
             }
             None => {}
@@ -103,7 +142,11 @@ impl Session {
             verified: self.verified,
         };
         self.verified = true;
-        self.workout.complete(today);
+        if let Some(plan) = self.plan.as_mut() {
+            plan.complete();
+        } else {
+            self.workout.complete(today);
+        }
         self.pending_record = Some(record.clone());
         self.phase = Phase::Unlocked;
         Some(record)
@@ -117,20 +160,64 @@ impl Session {
         }
     }
 
+    /// DEBUG: jump straight into an active set from any phase — skips the coding
+    /// timer and the lock so detection can be exercised on demand. Prescribes
+    /// the next incomplete item (plan) or the rotation's next (legacy).
+    pub fn debug_force_workout(&mut self, now: f64, today: &str) {
+        self.timer.stop();
+        self.progress = None;
+        let _ = now;
+        let rx = if let Some(plan) = self.plan.as_mut() {
+            plan.roll_date(today);
+            plan.prescribe()
+        } else {
+            self.workout.prescribe(today)
+        };
+        if let Some(rx) = rx {
+            self.prescription = Some(rx);
+            self.phase = Phase::WorkoutActive;
+        }
+    }
+
+    /// DEBUG: return to the coding phase from any phase (the caller releases the
+    /// camera). Re-arms the coding timer.
+    pub fn debug_force_coding(&mut self, now: f64) {
+        self.prescription = None;
+        self.progress = None;
+        self.phase = Phase::Coding;
+        self.timer.start(now);
+    }
+
     pub fn take_pending_record(&mut self) -> Option<SetRecord> {
         self.pending_record.take()
     }
 
     pub fn snapshot(&self, now: f64) -> Snapshot {
+        let day = self.plan.as_ref().map(|p| p.to_day_plan());
+        let (capacity_used, capacity_limit, rotation, pointer) = match &day {
+            Some(d) => (
+                d.sets_done,
+                d.sets_total,
+                d.items.iter().map(|i| i.label.clone()).collect(),
+                d.items.iter().position(|i| i.done < i.total).unwrap_or(0),
+            ),
+            None => (
+                self.workout.capacity_used(),
+                self.workout.capacity_limit(),
+                self.workout.rotation_names(),
+                self.workout.pointer(),
+            ),
+        };
         Snapshot {
             phase: self.phase,
             remaining_seconds: self.timer.remaining(now),
             prescription: self.prescription.clone(),
             progress: self.progress.clone(),
-            capacity_used: self.workout.capacity_used(),
-            capacity_limit: self.workout.capacity_limit(),
-            rotation: self.workout.rotation_names(),
-            pointer: self.workout.pointer(),
+            capacity_used,
+            capacity_limit,
+            rotation,
+            pointer,
+            day,
         }
     }
 
@@ -243,6 +330,22 @@ mod tests {
         s.tick(360.0, "2026-07-19");
         // long workout: coding timer must not be running
         assert_eq!(s.snapshot(10_000.0).remaining_seconds, 360.0);
+    }
+
+    #[test]
+    fn debug_toggle_switches_between_coding_and_workout() {
+        let mut s = session();
+        s.start(0.0, "2026-07-19");
+        assert_eq!(s.snapshot(0.0).phase, Phase::Coding);
+        // Force into a set without waiting out the timer.
+        s.debug_force_workout(1.0, "2026-07-19");
+        let snap = s.snapshot(1.0);
+        assert_eq!(snap.phase, Phase::WorkoutActive);
+        assert!(snap.prescription.is_some());
+        // Force back to coding.
+        s.debug_force_coding(2.0);
+        assert_eq!(s.snapshot(2.0).phase, Phase::Coding);
+        assert!(s.snapshot(2.0).prescription.is_none());
     }
 
     #[test]

@@ -6,12 +6,23 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use engine::clock::{Clock, SystemClock};
+use engine::plan::DailyPlan;
 use engine::session::Session;
 use engine::store::{default_continuous_pool, Store};
 use engine::timer::CodingTimer;
-use engine::types::{Progress, Snapshot};
+use engine::types::{ExerciseKind, Phase, Progress, Snapshot};
 use engine::workout::WorkoutEngine;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// The daily routine, bundled at build time (like exercise_specs.json).
+const ROUTINE_JSON: &str = include_str!("../resources/routine.json");
+
+/// Persisted per-item completion so the day survives app restarts.
+#[derive(Serialize, Deserialize, Default)]
+struct PlanState {
+    date: String,
+    done: Vec<(String, u32)>,
+}
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 mod hub;
@@ -26,13 +37,36 @@ pub(crate) type SharedCore = Mutex<Core>;
 fn build_core() -> Core {
     let dir = dirs_next_data_dir();
     let store = Store::open(&dir.join("reps.sqlite")).expect("open sqlite");
-    let work_minutes: f64 = store.setting("work_minutes", "6").parse().unwrap_or(6.0);
+    // REPS_WORK_MINUTES overrides the coding timer for testing (e.g. 0.15 = a
+    // ~9s countdown so you can reach a locked set immediately); otherwise the
+    // persisted setting (default 6 min).
+    let work_minutes: f64 = std::env::var("REPS_WORK_MINUTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| store.setting("work_minutes", "6").parse().unwrap_or(6.0));
     let capacity: u32 = store.setting("max_weighted_sets", "20").parse().unwrap_or(20);
     let rotation = store.load_rotation().expect("load rotation");
     let mut workout = WorkoutEngine::new(rotation, default_continuous_pool(), capacity);
     let (pointer, used, date) = store.load_pointer_state().expect("load pointer");
     workout.restore(pointer, used, &date);
-    let session = Session::new(CodingTimer::new(work_minutes * 60.0), workout);
+    let mut session = Session::new(CodingTimer::new(work_minutes * 60.0), workout);
+
+    // Drive prescription from the routine.json daily plan (falls back to the
+    // rotation if the routine fails to parse). Restore today's completion.
+    let today = SystemClock.today();
+    match DailyPlan::from_routine_json(ROUTINE_JSON, &today) {
+        Ok(mut plan) => {
+            if let Ok(ps) = serde_json::from_str::<PlanState>(&store.setting("plan_state", "")) {
+                if !ps.date.is_empty() {
+                    plan.restore(&ps.date, &ps.done);
+                    plan.roll_date(&today); // clears completion if it's a new day
+                }
+            }
+            session.set_plan(plan);
+        }
+        Err(e) => eprintln!("routine.json failed to load, using rotation: {e}"),
+    }
+
     Core { session, store }
 }
 
@@ -61,10 +95,57 @@ pub(crate) fn persist_and_snapshot(core: &mut Core) -> Snapshot {
         Ok(()) => {}
         Err(e) => eprintln!("failed to save pointer state: {e}"),
     }
+    // Persist the daily-plan completion so today's progress survives a restart.
+    if let Some(plan) = core.session.plan() {
+        let ps = PlanState { date: plan.date().to_string(), done: plan.done_state() };
+        if let Ok(json) = serde_json::to_string(&ps) {
+            if let Err(e) = core.store.set_setting("plan_state", &json) {
+                eprintln!("failed to save plan state: {e}");
+            }
+        }
+    }
     core.session.snapshot(clock.now())
 }
 
+/// Print a concise, human-readable line of the current session state to the
+/// terminal (stdout) whenever it changes — so you can read your state while the
+/// app runs without watching the webview.
+pub(crate) fn print_state(snap: &Snapshot) {
+    static LAST: Mutex<String> = Mutex::new(String::new());
+    let rx = snap.prescription.as_ref();
+    let ex = rx.map(|r| r.exercise.as_str()).unwrap_or("—");
+    let target = rx
+        .map(|r| match r.kind {
+            ExerciseKind::Continuous => format!("{:.0}s", r.target_seconds),
+            ExerciseKind::Rep => format!("{} reps", r.target_reps),
+        })
+        .unwrap_or_default();
+    let value = snap.progress.as_ref().map(|p| p.value.round() as i64).unwrap_or(0);
+    let line = match snap.phase {
+        Phase::Coding => {
+            let rem = snap.remaining_seconds.max(0.0) as u64;
+            let next = snap.rotation.get(snap.pointer).map(|s| s.as_str()).unwrap_or("—");
+            format!("[STATE] ⌨️  CODING · {}:{:02} left · next: {}", rem / 60, rem % 60, next)
+        }
+        Phase::ExerciseRequired => format!("[STATE] 🔒 LOCKED · do {} · {}", ex, target),
+        Phase::WorkoutActive => format!("[STATE] 🏋️  ACTIVE · {} · {} / {}", ex, value, target),
+        Phase::WeightConfirmation => format!(
+            "[STATE] ⚖️  CONFIRM WEIGHT · {} · {:.0} lbs",
+            ex,
+            rx.map(|r| r.default_weight).unwrap_or(0.0)
+        ),
+        Phase::Unlocked => "[STATE] ✅ UNLOCKED — set complete".to_string(),
+    };
+    if let Ok(mut last) = LAST.lock() {
+        if *last != line {
+            println!("{line}");
+            *last = line;
+        }
+    }
+}
+
 fn emit_snapshot(app: &AppHandle, snap: &Snapshot) {
+    print_state(snap);
     let _ = app.emit("snapshot", snap);
 }
 
@@ -103,6 +184,32 @@ fn begin_workout(app: AppHandle, state: State<SharedCore>) -> Snapshot {
 #[tauri::command]
 fn honor_complete(app: AppHandle) -> Snapshot {
     hub::honor_complete(&app)
+}
+
+/// DEBUG: force the session between "coding" and "workout" without waiting out
+/// the coding timer, and flip the camera to match. Lets you exercise live
+/// detection on demand from the debug toggle.
+#[tauri::command]
+fn debug_mode(app: AppHandle, state: State<SharedCore>, mode: String) -> Snapshot {
+    let clock = SystemClock;
+    let mut core = state.lock().unwrap();
+    let workout = mode == "workout";
+    if workout {
+        core.session.debug_force_workout(clock.now(), &clock.today());
+    } else {
+        core.session.debug_force_coding(clock.now());
+    }
+    let snap = persist_and_snapshot(&mut core);
+    drop(core);
+    if workout {
+        if let Some(rx) = snap.prescription.as_ref() {
+            hub::enable_metric_async(&app, rx.exercise.clone(), rx.target_reps, rx.target_seconds);
+        }
+    } else {
+        hub::disable_metric_async(&app);
+    }
+    emit_snapshot(&app, &snap);
+    snap
 }
 
 #[tauri::command]
@@ -425,6 +532,7 @@ pub fn run() {
             confirm_weight,
             resume_coding,
             honor_complete,
+            debug_mode,
             debug_videos,
             debug_stream_start,
             debug_stream_stop
@@ -440,6 +548,7 @@ pub fn run() {
                 core.session.tick(clock.now(), &clock.today());
                 let snap = core.session.snapshot(clock.now());
                 drop(core);
+                print_state(&snap);
                 let _ = handle.emit("snapshot", &snap);
             });
             Ok(())
