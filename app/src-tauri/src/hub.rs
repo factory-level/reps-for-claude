@@ -62,9 +62,17 @@ pub fn metric_config_for(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    // The rig's webcam is mounted upside-down, and every exercise was tuned on
+    // frames rotated 180° — so the app must rotate identically or the joint
+    // angles are inverted and no rep crosses its thresholds. Overridable for
+    // other setups via REPS_CAMERA_ROTATE (0/90/180/270).
+    let camera_rotate: i64 = std::env::var("REPS_CAMERA_ROTATE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(180);
     object.insert(
         "camera".into(),
-        serde_json::json!({"source": "index", "value": camera_index, "id": "webcam"}),
+        serde_json::json!({"source": "index", "value": camera_index, "id": "webcam", "rotate": camera_rotate}),
     );
     Some((plugin_id, config))
 }
@@ -187,10 +195,32 @@ pub fn start(app: AppHandle) {
         .ok();
 }
 
+/// Print a terminal line when the camera gains/loses your pose (deduped — no
+/// per-frame angle spam), so you can tell from the terminal whether you're in
+/// frame while a set runs.
+fn print_detect(data: &serde_json::Value) {
+    static LAST: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+    let pose = data.get("poseDetected").and_then(|v| v.as_bool()).unwrap_or(false);
+    if let Ok(mut last) = LAST.lock() {
+        if *last != Some(pose) {
+            println!(
+                "{}",
+                if pose {
+                    "[DETECT] 🟢 pose in frame — tracking"
+                } else {
+                    "[DETECT] 🔴 no pose in frame"
+                }
+            );
+            *last = Some(pose);
+        }
+    }
+}
+
 fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
     for event in rx {
         match event {
             VisionEvent::Landmarks(data) => {
+                print_detect(&data);
                 let _ = app.emit("vision-landmarks", data);
             }
             VisionEvent::Progress { value, unit, satisfied } => {
@@ -199,12 +229,16 @@ fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
                 core.session.report_progress(Progress { value, unit, satisfied });
                 let snap = crate::persist_and_snapshot(&mut core);
                 drop(core);
+                crate::print_state(&snap);
                 let _ = app.emit("snapshot", &snap);
                 if satisfied {
                     disable_metric_async(&app);
                 }
             }
             VisionEvent::Semantic { kind, payload } => {
+                if kind == "rep_completed" || kind == "target_reached" {
+                    println!("[DETECT] ✓ {}", kind);
+                }
                 let _ = app.emit(
                     "vision-event",
                     serde_json::json!({"kind": kind, "payload": payload}),
@@ -338,10 +372,22 @@ mod tests {
         let (plugin, config) = metric_config_for(&specs, "squat", 12, 0.0).unwrap();
         assert_eq!(plugin, "reps_vision");
         assert_eq!(config["activity"], "lift");
-        assert_eq!(config["exercise"]["downBelow"], 110.0);
+        // downBelow is the (camera-tuned) spec value, not a hardcoded constant.
+        assert_eq!(
+            config["exercise"]["downBelow"],
+            specs["exercises"]["squat"]["exercise"]["downBelow"]
+        );
+        assert!(config["exercise"]["downBelow"].is_number());
         assert_eq!(config["targetReps"], 12);
         assert_eq!(config["camera"]["source"], "index");
         assert_eq!(config["camera"]["id"], "webcam");
+        // The rig is mounted 180°; frames must be rotated to match the tuned
+        // thresholds (env REPS_CAMERA_ROTATE overrides; default 180).
+        let expected_rotate: i64 = std::env::var("REPS_CAMERA_ROTATE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(180);
+        assert_eq!(config["camera"]["rotate"], expected_rotate);
     }
 
     #[test]
@@ -431,6 +477,6 @@ mod tests {
     #[test]
     fn unknown_exercise_yields_none() {
         let specs = load_exercise_specs().unwrap();
-        assert!(metric_config_for(&specs, "deadlift", 5, 0.0).is_none());
+        assert!(metric_config_for(&specs, "wallsit", 5, 0.0).is_none());
     }
 }

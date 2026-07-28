@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "Daily full-body + mobility",
+  "description": "The routine the app works off of each day: every listed lift, the conditioning block, and every stretch must be completed to clear the day. Lifts are camera-verified reps; jump rope and stretches are timed holds.",
+  "lifts": [
+    { "exercise": "squat",         "sets": 3, "reps": 5, "label": "Back squat" },
+    { "exercise": "deadlift",      "sets": 1, "reps": 5, "label": "Deadlift" },
+    { "exercise": "incline_bench", "sets": 3, "reps": 5, "label": "Incline bench" },
+    { "exercise": "overhead",      "sets": 3, "reps": 5, "label": "Overhead press" },
+    { "exercise": "row",           "sets": 3, "reps": 8, "label": "Barbell row" },
+    { "exercise": "pullup",        "sets": 3, "reps": 5, "label": "Pull-up" }
+  ],
+  "conditioning": [
+    { "exercise": "jumprope", "rounds": 2, "seconds": 60, "label": "Jump rope" }
+  ],
+  "stretches": [
+    { "name": "hamstring",   "label": "Hamstring stretch",     "seconds": 30, "perSide": true },
+    { "name": "hip_flexor",  "label": "Hip-flexor lunge",      "seconds": 30, "perSide": true },
+    { "name": "thoracic",    "label": "Thoracic rotation",     "seconds": 30, "perSide": true },
+    { "name": "shoulder",    "label": "Cross-body shoulder",   "seconds": 30, "perSide": true },
+    { "name": "chest",       "label": "Doorway chest",         "seconds": 30, "perSide": false },
+    { "name": "quad",        "label": "Standing quad",         "seconds": 30, "perSide": true },
+    { "name": "calf",        "label": "Calf stretch",          "seconds": 30, "perSide": true }
+  ]
+}
