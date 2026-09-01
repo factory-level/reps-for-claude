@@ -1,0 +1,246 @@
+/* 16-bit workout OS. Two modes, one composition: title / character / status.
+   CODE = daytime sky + wood; WORKOUT = claude.ai ivory + Claude orange.
+   Pixel rules: no blur, no radius, hard drop-shadows, `pixelated` sprites. */
+
+/* Baloo 2: round, chunky, bubbly — one variable family for everything. */
+@font-face {
+  font-family: "Baloo 2";
+  src: url("./assets/fonts/baloo2.woff2") format("woff2");
+  font-weight: 400 800;
+  font-display: block;
+}
+:root {
+  --clawd: #da7756;
+  --clawd-deep: #b85c3c;
+  --ivory: #faf9f5;
+  --manilla: #ebdbbc;
+  --sky: #85e1f5;
+  --ink: #4a2b47; /* plum, not black — softer outlines */
+  --go: #5cc26b; /* the LOGGED check */
+  --display: "Baloo 2", "Nunito", "Varela Round", sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--ink);
+  color: var(--ink);
+  font-family: var(--display);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---- stage: the three bands ------------------------------------------- */
+.stage {
+  position: relative;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 30fr 45fr 25fr;
+  text-align: center;
+  background: var(--bg-color);
+  image-rendering: pixelated;
+}
+.stage > * {
+  position: relative;
+  z-index: 1;
+}
+/* The whole scene (room + mascot) is one looping clip; its poster is the
+   composited still, so a codec hiccup degrades to a static scene. */
+.stage > .scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.stage.code {
+  --bg-color: var(--sky);
+  --accent: var(--ivory);
+}
+.stage.workout {
+  --bg-color: var(--ivory);
+  --accent: var(--clawd);
+}
+
+/* Title on a rounded ivory plate so it reads over any scene. */
+.title {
+  margin: 0;
+  align-self: center;
+  justify-self: center;
+  padding: 1vh 6vh 2vh;
+  border-radius: 6vh;
+  background: var(--ivory);
+  border: 0.8vh solid var(--ink);
+  box-shadow: 1.2vh 1.2vh 0 var(--ink);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 14vh;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--title);
+  text-shadow: 0.04em 0.04em 0 var(--ink);
+  animation: bob 1s steps(2) infinite;
+}
+.stage.code {
+  --title: #2f8fd0; /* deep sky: --sky itself is too pale on ivory */
+}
+.stage.workout {
+  --title: var(--clawd);
+}
+@keyframes bob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-4px); }
+}
+
+.character {
+  align-self: end;
+  justify-self: center;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.sprite {
+  height: 100%;
+  width: auto;
+  image-rendering: pixelated;
+  background: transparent;
+}
+
+/* SNES dialogue box: the status sits in a panel so it layers over the scene
+   like game UI instead of fighting the sprite for the floor. */
+.status {
+  align-self: end;
+  justify-self: center;
+  margin-bottom: 3vh;
+  min-width: 48vw;
+  padding: 2vh 4vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5vh;
+  background: var(--ivory);
+  border: 0.8vh solid var(--ink);
+  border-radius: 2vh;
+  box-shadow: 1.2vh 1.2vh 0 var(--ink);
+}
+.big {
+  font-size: 16vh;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--clawd);
+  text-shadow: 0.04em 0.04em 0 var(--ink);
+}
+.medium {
+  font-size: 6vh;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--clawd);
+  text-shadow: 0.04em 0.04em 0 var(--ink);
+}
+.small {
+  font-size: 3.2vh;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.lockrow {
+  display: flex;
+  align-items: center;
+  gap: 4vh;
+}
+.padlock {
+  height: 16vh;
+  width: auto;
+  shape-rendering: crispEdges;
+}
+
+.weight {
+  font-family: var(--display);
+  font-size: 10vh;
+  width: 5ch;
+  padding: 1vh;
+  text-align: center;
+  color: var(--ink);
+  background: var(--ivory);
+  border: 1vh solid var(--ink);
+  box-shadow: 1vh 1vh 0 var(--ink);
+}
+.weight::-webkit-inner-spin-button,
+.weight::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+/* ---- LOGGED takeover ---------------------------------------------------- */
+.takeover {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5vh;
+  background: var(--ivory);
+  --title: var(--go);
+}
+.takeover .check {
+  width: 36vh;
+  height: 36vh;
+  filter: drop-shadow(1.2vh 1.2vh 0 var(--ink));
+  animation: pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes pop {
+  from { transform: scale(0.4); }
+  to { transform: scale(1); }
+}
+
+/* ---- dev-only controls -------------------------------------------------- */
+.debug-toggle {
+  position: fixed;
+  top: 1vh;
+  right: 1vh;
+  display: flex;
+  gap: 0.5vh;
+  padding: 0.5vh;
+  background: var(--ink);
+  color: var(--manilla);
+  font-family: var(--display);
+  font-size: 1.6vh;
+  z-index: 10;
+}
+.debug-toggle button {
+  font: inherit;
+  padding: 0.5vh 1vh;
+  border: 0.3vh solid var(--manilla);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.debug-toggle button.on {
+  background: var(--clawd);
+  color: var(--ink);
+}
+.debug-host {
+  position: fixed;
+  inset: 8vh 0 0 0;
+  overflow: auto;
+  background: var(--ivory);
+  z-index: 9;
+}
+
+/* ---- quality floor ------------------------------------------------------ */
+:focus-visible {
+  outline: 0.5vh solid var(--ink);
+  outline-offset: 0.5vh;
+}
+@media (prefers-reduced-motion: reduce) {
+  .title,
+  .takeover .check {
+    animation: none;
+  }
+}

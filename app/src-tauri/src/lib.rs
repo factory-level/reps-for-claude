@@ -26,10 +26,11 @@ struct PlanState {
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 mod hub;
+mod windows;
 
 pub(crate) struct Core {
     pub(crate) session: Session,
-    store: Store,
+    pub(crate) store: Store,
 }
 
 pub(crate) type SharedCore = Mutex<Core>;
@@ -149,7 +150,17 @@ pub(crate) fn emit_snapshot(app: &AppHandle, snap: &Snapshot) {
     // Durable history: phase changes publish their reps.* events through the
     // hub (fire-and-forget; queues while the hub is down).
     hub::publish_phase_transition(snap);
+    // Debt owed → the programming monitor is locked (fullscreen, on top).
+    windows::apply_lock(app, snap.phase != Phase::Coding);
     let _ = app.emit("snapshot", snap);
+}
+
+/// Camera on only while working out: enable the metric for the prescription
+/// (fire-and-forget; failure surfaces honor mode).
+fn enable_metric_for(app: &AppHandle, snap: &Snapshot) {
+    if let Some(rx) = snap.prescription.as_ref() {
+        hub::enable_metric_async(app, rx.exercise.clone(), rx.target_reps, rx.target_seconds);
+    }
 }
 
 #[tauri::command]
@@ -158,29 +169,10 @@ fn get_snapshot(state: State<SharedCore>) -> Snapshot {
     persist_and_snapshot(&mut core)
 }
 
+/// F11 in the gym window: flip it between maximized and fullscreen.
 #[tauri::command]
-fn start_session(app: AppHandle, state: State<SharedCore>) -> Snapshot {
-    let clock = SystemClock;
-    let mut core = state.lock().unwrap();
-    core.session.start(clock.now(), &clock.today());
-    let snap = persist_and_snapshot(&mut core);
-    emit_snapshot(&app, &snap);
-    snap
-}
-
-#[tauri::command]
-fn begin_workout(app: AppHandle, state: State<SharedCore>) -> Snapshot {
-    let mut core = state.lock().unwrap();
-    core.session.begin_workout();
-    let snap = persist_and_snapshot(&mut core);
-    drop(core);
-    // Camera on only while working out: enable the metric for this
-    // prescription (fire-and-forget; failure surfaces honor mode).
-    if let Some(rx) = snap.prescription.as_ref() {
-        hub::enable_metric_async(&app, rx.exercise.clone(), rx.target_reps, rx.target_seconds);
-    }
-    emit_snapshot(&app, &snap);
-    snap
+fn toggle_gym_fullscreen(app: AppHandle) {
+    windows::toggle_gym_fullscreen(&app);
 }
 
 /// Honor-mode completion: camera path failed, the user attests the set.
@@ -205,9 +197,7 @@ fn debug_mode(app: AppHandle, state: State<SharedCore>, mode: String) -> Snapsho
     let snap = persist_and_snapshot(&mut core);
     drop(core);
     if workout {
-        if let Some(rx) = snap.prescription.as_ref() {
-            hub::enable_metric_async(&app, rx.exercise.clone(), rx.target_reps, rx.target_seconds);
-        }
+        enable_metric_for(&app, &snap);
     } else {
         hub::disable_metric_async(&app);
     }
@@ -251,20 +241,6 @@ fn confirm_weight(app: AppHandle, state: State<SharedCore>, weight: f64) -> Snap
     // release the camera like every other completion path. Found live: a
     // simulated/early completion left the detector running (and counting)
     // after desktop_unlocked because only the hub-satisfied path disabled.
-    hub::disable_metric_async(&app);
-    emit_snapshot(&app, &snap);
-    snap
-}
-
-#[tauri::command]
-fn resume_coding(app: AppHandle, state: State<SharedCore>) -> Snapshot {
-    let clock = SystemClock;
-    let mut core = state.lock().unwrap();
-    core.session.resume_coding(clock.now());
-    let snap = persist_and_snapshot(&mut core);
-    drop(core);
-    // Belt and braces: the metric is disabled on satisfaction already, but
-    // an aborted workout must also release the camera.
     hub::disable_metric_async(&app);
     emit_snapshot(&app, &snap);
     snap
@@ -539,12 +515,10 @@ pub fn run() {
         .manage(Mutex::new(None) as hub::SharedHub)
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
-            start_session,
-            begin_workout,
             simulate_progress,
             confirm_weight,
-            resume_coding,
             honor_complete,
+            toggle_gym_fullscreen,
             debug_mode,
             debug_videos,
             debug_stream_start,
@@ -552,16 +526,51 @@ pub fn run() {
         ])
         .setup(|app| {
             hub::start(app.handle().clone());
+            windows::place(app.handle());
             let handle = app.handle().clone();
-            std::thread::spawn(move || loop {
-                std::thread::sleep(Duration::from_secs(1));
+            // The coding timer starts the moment the app does — no "start" button.
+            {
                 let clock = SystemClock;
                 let state = handle.state::<SharedCore>();
-                let mut core = state.lock().unwrap();
-                core.session.tick(clock.now(), &clock.today());
-                let snap = core.session.snapshot(clock.now());
-                drop(core);
-                emit_snapshot(&handle, &snap);
+                state.lock().unwrap().session.start(clock.now(), &clock.today());
+            }
+            std::thread::spawn(move || {
+                let mut unlocked_since: Option<f64> = None;
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+                    let clock = SystemClock;
+                    let (now, today) = (clock.now(), clock.today());
+                    let state = handle.state::<SharedCore>();
+                    let mut core = state.lock().unwrap();
+                    let locked_now = core.session.tick(now, &today);
+                    let mut snap = core.session.snapshot(now);
+                    if locked_now {
+                        // Emit EXERCISE_REQUIRED first so the durable lock events
+                        // fire, then auto-start: the camera comes on the moment
+                        // a set is owed (spec §20 — no button).
+                        emit_snapshot(&handle, &snap);
+                        core.session.begin_workout();
+                        snap = persist_and_snapshot(&mut core);
+                        enable_metric_for(&handle, &snap);
+                    }
+                    // The "LOGGED" beat: 3s in UNLOCKED, then CODE (main minimizes).
+                    if snap.phase == Phase::Unlocked {
+                        let since = *unlocked_since.get_or_insert(now);
+                        if now - since >= 3.0 {
+                            core.session.resume_coding(now);
+                            snap = persist_and_snapshot(&mut core);
+                            unlocked_since = None;
+                            // Belt and braces: an aborted workout must release the camera.
+                            hub::disable_metric_async(&handle);
+                        }
+                    } else {
+                        unlocked_since = None;
+                    }
+                    drop(core);
+                    emit_snapshot(&handle, &snap);
+                    windows::refocus(&handle);
+                    windows::assert_gym(&handle);
+                }
             });
             Ok(())
         })

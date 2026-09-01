@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(0.2, 1.6, 0.4, 1)",
+        "createdAt": "2026-09-01T02:46:36.044Z",
+        "reason": "Claude: intentional overshoot on the LOGGED check pop — user's brief is 'bubbly, feminine, 16-bit game screen'; a game-style stamp pop is domain-appropriate motion"
+      }
+    ]
+  }
+}
