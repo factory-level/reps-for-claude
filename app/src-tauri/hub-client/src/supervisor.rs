@@ -36,14 +36,24 @@ fn free_stale_hub_port(port: u16) {
     eprintln!("hub: port {port} already in use — clearing a leaked hub before starting");
     #[cfg(unix)]
     {
-        // `fuser -k <port>/tcp` SIGKILLs whatever holds the port; the hub is
-        // the only thing that ever binds it in this app.
-        let _ = Command::new("fuser")
-            .arg("-k")
-            .arg(format!("{port}/tcp"))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        // Signal the whole process GROUP of whatever holds the port, not just
+        // the listener: hubd is spawned as its own group (see pre_exec below),
+        // so its vision-host — the process actually holding the camera — dies
+        // with it. Killing hubd alone orphaned the host and the next lock
+        // failed with "cannot open camera".
+        let groups = stale_port_groups(port);
+        for pgid in &groups {
+            unsafe { libc::kill(-pgid, libc::SIGTERM) };
+        }
+        for _ in 0..30 {
+            if !port_in_use(port) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        for pgid in &groups {
+            unsafe { libc::kill(-pgid, libc::SIGKILL) };
+        }
     }
     for _ in 0..30 {
         if !port_in_use(port) {
@@ -52,6 +62,27 @@ fn free_stale_hub_port(port: u16) {
         std::thread::sleep(Duration::from_millis(100));
     }
     eprintln!("hub: warning — port {port} still in use after cleanup; hubd may fail to start");
+}
+
+/// Process groups (other than our own) of the processes bound to `port`.
+#[cfg(unix)]
+fn stale_port_groups(port: u16) -> Vec<i32> {
+    let out = Command::new("fuser")
+        .arg(format!("{port}/tcp"))
+        .stderr(Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    let mine = unsafe { libc::getpgrp() };
+    let mut groups: Vec<i32> = out
+        .split_whitespace()
+        .filter_map(|s| s.parse::<i32>().ok())
+        .map(|pid| unsafe { libc::getpgid(pid) })
+        .filter(|pgid| *pgid > 0 && *pgid != mine)
+        .collect();
+    groups.sort_unstable();
+    groups.dedup();
+    groups
 }
 
 pub struct HubSupervisorConfig {
@@ -445,7 +476,63 @@ mod port_tests {
         let port = listener.local_addr().unwrap().port();
         assert!(port_in_use(port), "a bound listener should read as in-use");
         drop(listener);
-        assert!(!port_in_use(port), "a released port should read as free");
+        // A sibling test spawning a child briefly duplicates this listener's fd
+        // until its exec, so give the kernel a moment to actually close it.
+        let freed = (0..50).any(|_| {
+            !port_in_use(port) || {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                false
+            }
+        });
+        assert!(freed, "a released port should read as free");
+    }
+
+    /// The leak that bit the rig: a hard-killed app leaves hubd AND its
+    /// vision-host behind; clearing the port must take the whole group.
+    #[cfg(unix)]
+    #[test]
+    fn free_stale_hub_port_kills_the_listeners_whole_group() {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+        let port = {
+            let l = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let p = l.local_addr().unwrap().port();
+            drop(l);
+            p
+        };
+        // "hubd" (python listener) with a "vision-host" sibling (sleep) in one group.
+        let script = format!(
+            "sleep 300 & python3 -c \"import socket,time; s=socket.socket(); s.bind(('127.0.0.1',{port})); s.listen(); time.sleep(300)\""
+        );
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = child.id() as i32;
+        for _ in 0..50 {
+            if port_in_use(port) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(port_in_use(port), "fixture listener never came up");
+
+        free_stale_hub_port(port);
+
+        assert!(!port_in_use(port));
+        let _ = child.wait();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        // Nothing left in the group — the "vision-host" sleep died too.
+        let survivors = Command::new("pgrep").arg("-g").arg(pgid.to_string()).output().unwrap();
+        assert!(
+            survivors.stdout.is_empty(),
+            "group {pgid} still has members: {}",
+            String::from_utf8_lossy(&survivors.stdout)
+        );
     }
 
     #[test]
