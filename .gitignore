@@ -15,3 +15,6 @@ vision/tests/fixtures/videos/*
 vision/tests/fixtures/videos/youtube/
 app/src-tauri/resources/hub-bundle/
 app/src-tauri/resources/companion/
+
+# Local tooling (Higgsfield CLI)
+node_modules/

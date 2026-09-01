@@ -9,5 +9,8 @@
     "preview": "npm run --prefix app preview",
     "test": "npm run --prefix app test",
     "install:app": "npm --prefix app install"
+  },
+  "devDependencies": {
+    "@higgsfield/cli": "^1.1.24"
   }
 }
