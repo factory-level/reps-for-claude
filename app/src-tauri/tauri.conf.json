@@ -12,9 +12,17 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Reps for Claude",
-        "width": 800,
-        "height": 600
+        "width": 1280,
+        "height": 720
+      },
+      {
+        "label": "gym",
+        "title": "Reps — Gym",
+        "width": 960,
+        "height": 540,
+        "url": "index.html?window=gym"
       }
     ],
     "security": {

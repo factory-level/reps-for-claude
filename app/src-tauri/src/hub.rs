@@ -449,10 +449,9 @@ fn print_detect(data: &serde_json::Value) {
 fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
     for event in rx {
         match event {
-            VisionEvent::Landmarks(data) => {
-                print_detect(&data);
-                let _ = app.emit("vision-landmarks", data);
-            }
+            // Landmarks are terminal-only now: nothing in the webviews listens,
+            // and pushing them at camera rate into both windows leaked memory.
+            VisionEvent::Landmarks(data) => print_detect(&data),
             VisionEvent::Progress { value, unit, satisfied } => {
                 let core_state = app.state::<crate::SharedCore>();
                 let mut core = core_state.lock().unwrap();
