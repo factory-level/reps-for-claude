@@ -70,6 +70,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "uuid",
 ]
 
 [[package]]
@@ -1555,8 +1556,10 @@ name = "hub-client"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "tungstenite",
 ]
 

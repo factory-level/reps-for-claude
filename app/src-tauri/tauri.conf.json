@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "app",
+  "productName": "Reps for Claude",
   "version": "0.1.0",
   "identifier": "dev.calvin.reps-for-claude",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "bash ../scripts/bundle-hub.sh && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -15,14 +15,18 @@
         "label": "main",
         "title": "Reps for Claude",
         "width": 1280,
-        "height": 720
+        "height": 720,
+        "visible": false,
+        "focus": false
       },
       {
         "label": "gym",
-        "title": "Reps — Gym",
+        "title": "Reps \u2014 Gym",
         "width": 960,
         "height": 540,
-        "url": "index.html?window=gym"
+        "url": "index.html?window=gym",
+        "visible": false,
+        "focus": false
       }
     ],
     "security": {
@@ -38,6 +42,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "resources/hub-bundle/": "hub-bundle/",
+      "resources/reps-vision/": "reps-vision/",
+      "resources/companion/": "companion/",
+      "resources/models/": "models/",
+      "resources/hub-manifest.json": "hub-manifest.json",
+      "resources/boot-hub.mjs": "boot-hub.mjs",
+      "resources/debug-videos/": "debug-videos/"
+    }
   }
 }

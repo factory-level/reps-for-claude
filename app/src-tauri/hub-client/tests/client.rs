@@ -113,7 +113,7 @@ fn enable_metric_round_trip_and_stream_events() {
         other => panic!("expected landmarks, got {other:?}"),
     }
     match recv_event(&rx) {
-        VisionEvent::Progress { value, unit, satisfied } => {
+        VisionEvent::Progress { value, unit, satisfied, .. } => {
             assert_eq!(value, 1.0);
             assert_eq!(unit, "reps");
             assert!(!satisfied);
@@ -161,4 +161,54 @@ fn server_close_emits_connection_lost() {
         }
     }
     assert!(saw_lost, "expected ConnectionLost after server close");
+}
+
+#[test]
+fn outbox_reopen_sends_original_publications_in_fifo_order_after_rejection() {
+    use hub_client::outbox::{Outbox, Publication};
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let rejecting = Arc::new(AtomicBool::new(true));
+    let accepted = Arc::new(Mutex::new(Vec::new()));
+    let reject = rejecting.clone();
+    let received = accepted.clone();
+    let (url, server) = mock_hub("1.5", move |method, params| {
+        if method == "subscribe" { return Ok(serde_json::json!({})); }
+        if reject.load(Ordering::SeqCst) { return Err("hub storage unavailable".into()); }
+        received.lock().unwrap().push((method.to_string(), params["id"].as_str().unwrap().to_string()));
+        Ok(serde_json::json!({}))
+    });
+    let mut client = HubClient::connect(&url).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("publications.sqlite");
+    {
+        let mut outbox = Outbox::open(&path).unwrap();
+        for publication in [
+            Publication::Event(serde_json::json!({"id":"event-before-outage"})),
+            Publication::Command(serde_json::json!({"id":"command-before-outage"})),
+            Publication::ActionResult(serde_json::json!({"id":"result-before-outage"})),
+        ] { outbox.enqueue(&publication).unwrap(); }
+        let head = outbox.next(0).unwrap().unwrap();
+        let Publication::Event(params) = &head.publication else { panic!("event must be first"); };
+        let error = client.publish_event(params).unwrap_err();
+        outbox.retry(&head, 0, &error.to_string()).unwrap();
+        assert!(outbox.next(999).unwrap().is_none());
+    }
+    // Reopen exactly the durable state a restarted publisher sees.
+    rejecting.store(false, Ordering::SeqCst);
+    let outbox = Outbox::open(&path).unwrap();
+    while let Some(head) = outbox.next(1000).unwrap() {
+        match &head.publication {
+            Publication::Event(p) => client.publish_event(p),
+            Publication::Command(p) => client.publish_command(p),
+            Publication::ActionResult(p) => client.report_action_result(p),
+        }.unwrap();
+        outbox.acknowledge(head.sequence).unwrap();
+    }
+    assert_eq!(*accepted.lock().unwrap(), vec![
+        ("publish_event".into(), "event-before-outage".into()),
+        ("publish_command".into(), "command-before-outage".into()),
+        ("report_action_result".into(), "result-before-outage".into()),
+    ]);
+    drop(client); server.join().unwrap();
 }

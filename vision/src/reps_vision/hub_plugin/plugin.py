@@ -12,16 +12,22 @@ Observation taxonomy: every output is one of
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from ..activities.base import BreakActivity
 from ..activities.jumprope import JumpRopeActivity
 from ..activities.lift import LiftActivity
 from ..activities.stretch import StretchActivity
 from ..exercises import ExerciseSpec
+from ..movement import MovementActivity, validate_movement
+from ..pose import MODEL_SHA256
 from .stream_loop import StreamLoop
 
 MODEL = {
     "name": "mediapipe-pose-landmarker",
-    "variant": "lite",
+    "variant": "full",
+    "sha256": MODEL_SHA256,
     "source": "reps-for-claude",
 }
 
@@ -78,12 +84,18 @@ class RepsVisionPlugin:
             "model": MODEL,
             "configSchema": CONFIG_SCHEMA,
             "observationSchema": OBSERVATION_SCHEMA,
+            "movementTemplates": json.loads((Path(__file__).parent.parent / "movement_templates.json").read_text()),
+            "movementContract": "config.movement is a schemaVersion:1 temporal detector; features map names to joint triples, phases are ordered angle conditions, returning to the first phase completes a repetition. See movementTemplates for examples. Templates are unqualified until held-out evaluation passes.",
         }
 
     def configure(self, params: dict) -> dict:
         activity = params.get("activity", "lift")
         if activity == "lift":
-            self._spec = ExerciseSpec.from_config(params["exercise"])
+            if "movement" in params:
+                validate_movement(params["movement"])
+                self._spec = None
+            else:
+                self._spec = ExerciseSpec.from_config(params["exercise"])
         elif activity in ("jumprope", "stretch"):
             self._spec = None
         else:
@@ -111,12 +123,21 @@ class RepsVisionPlugin:
         if self._loop is not None:
             raise RuntimeError("stream already running")
         camera = (config or {}).get("camera") or (self._config or {}).get("camera") or {}
+        activity = self._build_activity()
+        capture = self._capture_factory(camera)
+        try:
+            estimator = self._estimator_factory()
+        except Exception:
+            capture.release()
+            raise
         self._loop = StreamLoop(
-            activity=self._build_activity(),
+            activity=activity,
             spec=self._spec,
-            estimator=self._estimator_factory(),
-            capture=self._capture_factory(camera),
+            estimator=estimator,
+            capture=capture,
             emit=emit,
+            frame_times_ms=(self._config or {}).get("replayTimesMs"),
+            provenance={key: self._config[key] for key in ("movementId", "movementVersion", "sessionId", "detectionId") if key in (self._config or {})},
         )
         self._loop.start()
 
@@ -130,6 +151,8 @@ class RepsVisionPlugin:
         config = self._config or {}
         activity = config.get("activity", "lift")
         if activity == "lift":
+            if "movement" in config:
+                return MovementActivity(config["movement"], int(config.get("targetReps", 10)))
             assert self._spec is not None
             return LiftActivity(self._spec, int(config.get("targetReps", 10)))
         if activity == "jumprope":
@@ -183,7 +206,37 @@ def _cv2_capture(camera: dict):
         raise RuntimeError(f"cannot open camera: {_redact_camera(camera)}")
     if "width" in camera:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, int(camera["width"]))
-    return capture
+    return _Capture(capture, camera)
+
+
+class _Capture:
+    def __init__(self, capture, camera):
+        import cv2
+        self.capture = capture
+        self.rotate = int(camera.get("rotate", 0))
+        if self.rotate not in (0, 90, 180, 270):
+            capture.release()
+            raise ValueError("camera rotation must be 0, 90, 180, or 270")
+        self.file = camera.get("source") == "file"
+        self.fps = (capture.get(cv2.CAP_PROP_FPS) or 30) if self.file else 30
+        self.index = 0
+        self.time_ms = None
+
+    def read(self):
+        import cv2
+        ok, frame = self.capture.read()
+        if ok:
+            if self.rotate:
+                rotation = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}[self.rotate]
+                frame = cv2.rotate(frame, rotation)
+            if self.file:
+                timestamp = self.capture.get(cv2.CAP_PROP_POS_MSEC)
+                self.time_ms = timestamp if self.time_ms is None or timestamp > self.time_ms else self.time_ms + 1000 / self.fps
+            self.index += 1
+        return ok, frame
+
+    def release(self):
+        self.capture.release()
 
 
 def _cv2_imread(frame_path: str):

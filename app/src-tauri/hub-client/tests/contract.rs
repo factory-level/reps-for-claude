@@ -98,7 +98,7 @@ fn client_follows_the_v1_workout_transcript() {
     }
     assert!(matches!(events[0], VisionEvent::Landmarks(_)));
     assert!(
-        matches!(&events[1], VisionEvent::Progress { value, unit, satisfied }
+        matches!(&events[1], VisionEvent::Progress { value, unit, satisfied, .. }
             if *value == 1.0 && unit == "reps" && !satisfied)
     );
     assert!(

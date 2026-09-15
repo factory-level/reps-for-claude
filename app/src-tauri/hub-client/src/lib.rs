@@ -10,6 +10,7 @@ use std::sync::mpsc;
 pub mod client;
 pub mod fake;
 pub mod supervisor;
+pub mod outbox;
 
 pub use client::HubClient;
 pub use fake::FakeHub;
@@ -26,6 +27,7 @@ pub enum VisionEvent {
         value: f64,
         unit: String,
         satisfied: bool,
+        context: ProgressContext,
     },
     /// Semantic events: rep_completed, target_reached, …
     Semantic {
@@ -34,6 +36,21 @@ pub enum VisionEvent {
     },
     Health(HubHealth),
     ConnectionLost,
+}
+
+/// Preserve routing identity through the client instead of losing it at decode.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ProgressContext {
+    pub metric_id: Option<String>,
+    pub session_id: Option<String>,
+}
+
+impl ProgressContext {
+    pub fn belongs_to(&self, metric_id: &str, session_id: Option<&str>) -> bool {
+        self.metric_id.as_deref() == Some(metric_id)
+            && session_id.is_some()
+            && self.session_id.as_deref() == session_id
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
@@ -141,18 +158,22 @@ pub(crate) fn event_from_frame(frame: &serde_json::Value) -> Option<VisionEvent>
     let data = frame.get("data").cloned().unwrap_or(serde_json::Value::Null);
     match stream {
         "landmarks" => Some(VisionEvent::Landmarks(data)),
-        "progress" => Some(VisionEvent::Progress {
-            value: data.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0),
-            unit: data
-                .get("unit")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            satisfied: data
-                .get("satisfied")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-        }),
+        "progress" => {
+            let value = data.get("value")?.as_f64()?;
+            let unit = data.get("unit")?.as_str()?;
+            if !value.is_finite() || value < 0.0 || !matches!(unit, "reps" | "seconds") {
+                return None;
+            }
+            Some(VisionEvent::Progress {
+                value,
+                unit: unit.to_string(),
+                satisfied: data.get("satisfied")?.as_bool()?,
+                context: ProgressContext {
+                    metric_id: frame.get("metricId").and_then(|v| v.as_str()).map(str::to_string),
+                    session_id: data.get("sessionId").and_then(|v| v.as_str()).map(str::to_string),
+                },
+            })
+        }
         "event" => Some(VisionEvent::Semantic {
             kind: data
                 .get("type")
@@ -163,5 +184,34 @@ pub(crate) fn event_from_frame(frame: &serde_json::Value) -> Option<VisionEvent>
         }),
         "health" => serde_json::from_value(data).ok().map(VisionEvent::Health),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn preserves_identity_and_rejects_other_workouts() {
+        let frame = json!({"stream":"progress", "metricId":"workout", "data":{
+            "sessionId":"current", "value":2, "unit":"reps", "satisfied":false
+        }});
+        let Some(VisionEvent::Progress { context, .. }) = event_from_frame(&frame) else { panic!() };
+        assert!(context.belongs_to("workout", Some("current")));
+        assert!(!context.belongs_to("workout", Some("previous")));
+        assert!(!context.belongs_to("preview", Some("current")));
+        assert!(!context.belongs_to("workout", None));
+        assert!(!ProgressContext::default().belongs_to("workout", None));
+    }
+
+    #[test]
+    fn malformed_progress_never_becomes_credit() {
+        for data in [json!({"satisfied":true}),
+            json!({"value":-1, "unit":"reps", "satisfied":true}),
+            json!({"value":10, "unit":"unknown", "satisfied":true}),
+            json!({"value":10, "unit":"reps", "satisfied":"yes"})] {
+            assert!(event_from_frame(&json!({"stream":"progress", "data":data})).is_none());
+        }
     }
 }

@@ -50,3 +50,16 @@ describe("Screen", () => {
     expect(screen.getByText("/ 60 sec")).toBeInTheDocument();
   });
 });
+
+it("Debug stays idle without displaying an automatic countdown", () => {
+  render(<Screen snapshot={base} variant="primary" debug />);
+  expect(screen.getByText("DEBUG")).toBeInTheDocument();
+  expect(screen.getByText(/Idle · start a test/)).toBeInTheDocument();
+  expect(screen.queryByText(/05:59/)).not.toBeInTheDocument();
+});
+it("Debug test progress never claims the screen is locked", () => {
+  render(<Screen snapshot={{ ...base, phase: "WORKOUT_ACTIVE" }} variant="primary" debug />);
+  expect(screen.getByText("TEST WORKOUT")).toBeInTheDocument();
+  expect(screen.queryByRole("img", { name: "locked" })).not.toBeInTheDocument();
+  expect(screen.getByText(/not saved to your workouts/)).toBeInTheDocument();
+});

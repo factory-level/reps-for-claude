@@ -10,12 +10,22 @@ use engine::plan::DailyPlan;
 use engine::session::Session;
 use engine::store::{default_continuous_pool, Store};
 use engine::timer::CodingTimer;
-use engine::types::{ExerciseKind, Phase, Progress, Snapshot};
+use engine::types::{ExerciseKind, Phase, Prescription, Progress, Snapshot};
 use engine::workout::WorkoutEngine;
 use serde::{Deserialize, Serialize};
 
-/// The daily routine, bundled at build time (like exercise_specs.json).
+/// Default daily routine, overridden by routine.json in the app data directory.
 const ROUTINE_JSON: &str = include_str!("../resources/routine.json");
+
+fn load_daily_plan(dir: &Path, today: &str) -> Result<DailyPlan, String> {
+    let path = dir.join("routine.json");
+    let json = match std::fs::read_to_string(&path) {
+        Ok(json) => json,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ROUTINE_JSON.to_string(),
+        Err(error) => return Err(format!("{}: {error}", path.display())),
+    };
+    DailyPlan::from_routine_json(&json, today)
+}
 
 /// Persisted per-item completion so the day survives app restarts.
 #[derive(Serialize, Deserialize, Default)]
@@ -27,6 +37,38 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 mod hub;
 mod windows;
+mod runtime;
+use runtime::{AppMode, Runtime};
+
+/// Installer diagnostic: use the same Tauri resource lookup and supervisor as
+/// the desktop, with disposable hub state and ephemeral ports. No window, lock,
+/// routine, or camera is started. Reuses/provisions the normal Python environment.
+pub fn check_runtime() -> Result<serde_json::Value, String> {
+    use hub_client::{HubSupervisor, HubSupervisorConfig, VisionHub};
+    let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+    let resources = tauri::utils::platform::resource_dir(context.package_info(), &tauri::utils::Env::default())
+        .map_err(|e| e.to_string())?;
+    let mut config = HubSupervisorConfig::bundled(&resources, &resources.join("reps-vision"));
+    let data = std::env::temp_dir().join(format!("reps-runtime-check-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&data).map_err(|e| e.to_string())?;
+    config.env.extend([
+        ("PORT".into(), "0".into()), ("DEBUG_PORT".into(), "0".into()),
+        ("HUB_BIND_HOST".into(), "127.0.0.1".into()),
+        ("HUB_DATA_DIR".into(), data.display().to_string()),
+        ("HUB_CERT_DIR".into(), data.join("no-certs").display().to_string()),
+        ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
+    ]);
+    let result = (|| {
+        let mut supervisor = HubSupervisor::start(config).map_err(|e| e.to_string())?;
+        let health = supervisor.health().map_err(|e| e.to_string())?;
+        if health.vision_host == "down" { return Err("vision host is down".into()); }
+        Ok(serde_json::json!({ "status": "ready", "resources": resources,
+            "visionHost": health.vision_host, "camera": health.camera,
+            "enabledMetrics": health.enabled_metrics }))
+    })();
+    let _ = std::fs::remove_dir_all(data);
+    result
+}
 
 pub(crate) struct Core {
     pub(crate) session: Session,
@@ -35,8 +77,7 @@ pub(crate) struct Core {
 
 pub(crate) type SharedCore = Mutex<Core>;
 
-fn build_core() -> Core {
-    let dir = dirs_next_data_dir();
+fn build_core(dir: &Path) -> Core {
     let store = Store::open(&dir.join("reps.sqlite")).expect("open sqlite");
     // REPS_WORK_MINUTES overrides the coding timer for testing (e.g. 0.15 = a
     // ~9s countdown so you can reach a locked set immediately); otherwise the
@@ -55,7 +96,7 @@ fn build_core() -> Core {
     // Drive prescription from the routine.json daily plan (falls back to the
     // rotation if the routine fails to parse). Restore today's completion.
     let today = SystemClock.today();
-    match DailyPlan::from_routine_json(ROUTINE_JSON, &today) {
+    match load_daily_plan(&dir, &today) {
         Ok(mut plan) => {
             if let Ok(ps) = serde_json::from_str::<PlanState>(&store.setting("plan_state", "")) {
                 if !ps.date.is_empty() {
@@ -146,10 +187,11 @@ pub(crate) fn print_state(snap: &Snapshot) {
 }
 
 pub(crate) fn emit_snapshot(app: &AppHandle, snap: &Snapshot) {
+    if app.state::<Runtime>().is_stopping() { return; }
     print_state(snap);
     // Durable history: phase changes publish their reps.* events through the
     // hub (fire-and-forget; queues while the hub is down).
-    hub::publish_phase_transition(snap);
+    if !app.state::<Runtime>().is_debug() { hub::publish_phase_transition(snap); }
     // Debt owed → the programming monitor is locked (fullscreen, on top).
     windows::apply_lock(app, snap.phase != Phase::Coding);
     let _ = app.emit("snapshot", snap);
@@ -169,6 +211,60 @@ fn get_snapshot(state: State<SharedCore>) -> Snapshot {
     persist_and_snapshot(&mut core)
 }
 
+#[tauri::command]
+fn get_app_mode(app: AppHandle) -> AppMode { app.state::<Runtime>().mode }
+
+#[tauri::command]
+fn show_gym(app: AppHandle) -> Result<(), String> {
+    if app.state::<Runtime>().is_stopping() { return Err("Application is restarting".into()); }
+    let gym = app.get_webview_window("gym").ok_or("Gym window unavailable")?;
+    gym.show().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_app_mode(app: AppHandle, mode: AppMode) -> Result<(), String> {
+    static SWITCH: Mutex<()> = Mutex::new(());
+    let _guard = SWITCH.try_lock().map_err(|_| "Mode change already in progress")?;
+    let runtime = app.state::<Runtime>();
+    if runtime.is_stopping() { return Err("Application is restarting".into()); }
+    if runtime.mode == mode { return Ok(()); }
+    runtime.save_mode(mode)?;
+    runtime.begin_stop();
+    windows::release(&app);
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        shutdown_runtime(&handle);
+        handle.restart();
+    });
+    Ok(())
+}
+
+fn stop_debug_process(app: &AppHandle) {
+    let state = app.state::<SharedDebugProcess>();
+    let mut guard = state.lock().unwrap();
+    guard.generation += 1;
+    if let Some(mut child) = guard.child.take() { let _ = child.kill(); let _ = child.wait(); }
+}
+
+fn shutdown_runtime(app: &AppHandle) {
+    windows::release(app);
+    stop_debug_process(app);
+    hub::stop(app);
+    app.state::<Runtime>().cleanup();
+}
+
+/// Emergency escape remains available in enforced Workout mode.
+#[tauri::command]
+fn emergency_escape(app: AppHandle, state: State<SharedCore>) -> Snapshot {
+    let mut core = state.lock().unwrap();
+    core.session.debug_force_coding(SystemClock.now());
+    let snap = persist_and_snapshot(&mut core);
+    drop(core);
+    hub::disable_metric_async(&app);
+    emit_snapshot(&app, &snap);
+    snap
+}
+
 /// F11 in the gym window: flip it between maximized and fullscreen.
 #[tauri::command]
 fn toggle_gym_fullscreen(app: AppHandle) {
@@ -181,16 +277,45 @@ fn honor_complete(app: AppHandle) -> Snapshot {
     hub::honor_complete(&app)
 }
 
+fn debug_exercise_options() -> Result<Vec<Prescription>, String> {
+    let specs = hub::load_exercise_specs()?;
+    let exercises = specs["exercises"].as_object().ok_or("Missing exercise specifications")?;
+    Ok(exercises.iter().map(|(name, spec)| {
+        let seconds = match spec["activity"].as_str() {
+            Some("jumprope") => spec["targetSeconds"].as_f64().unwrap_or(60.0),
+            Some("stretch") => spec["holdSeconds"].as_f64().unwrap_or(30.0),
+            _ => 0.0,
+        };
+        Prescription { exercise: name.clone(), kind: if seconds > 0.0 { ExerciseKind::Continuous } else { ExerciseKind::Rep },
+            target_reps: if seconds > 0.0 { 0 } else { 10 }, target_seconds: seconds, default_weight: 0.0 }
+    }).collect())
+}
+
+#[tauri::command]
+fn debug_exercises(app: AppHandle) -> Result<Vec<Prescription>, String> {
+    app.state::<Runtime>().require_debug()?;
+    debug_exercise_options()
+}
+
 /// DEBUG: force the session between "coding" and "workout" without waiting out
 /// the coding timer, and flip the camera to match. Lets you exercise live
 /// detection on demand from the debug toggle.
 #[tauri::command]
-fn debug_mode(app: AppHandle, state: State<SharedCore>, mode: String) -> Snapshot {
+fn debug_mode(app: AppHandle, state: State<SharedCore>, mode: String, exercise: Option<String>) -> Result<Snapshot, String> {
+    app.state::<Runtime>().require_debug()?;
+    if mode != "workout" && mode != "coding" { return Err("Unknown test action".into()); }
+    let selected = if mode == "workout" {
+        exercise.map(|name| debug_exercise_options()?.into_iter().find(|rx| rx.exercise == name)
+            .ok_or_else(|| format!("Unknown exercise: {name}"))).transpose()?
+    } else { None };
+    stop_debug_process(&app);
+    hub::disable_metric_now(&app);
     let clock = SystemClock;
     let mut core = state.lock().unwrap();
     let workout = mode == "workout";
     if workout {
-        core.session.debug_force_workout(clock.now(), &clock.today());
+        if let Some(rx) = selected { core.session.debug_start_exercise(rx); }
+        else { core.session.debug_force_workout(clock.now(), &clock.today()); }
     } else {
         core.session.debug_force_coding(clock.now());
     }
@@ -202,7 +327,7 @@ fn debug_mode(app: AppHandle, state: State<SharedCore>, mode: String) -> Snapsho
         hub::disable_metric_async(&app);
     }
     emit_snapshot(&app, &snap);
-    snap
+    Ok(snap)
 }
 
 #[tauri::command]
@@ -211,13 +336,16 @@ fn simulate_progress(
     state: State<SharedCore>,
     value: f64,
     satisfied: bool,
-) -> Snapshot {
+) -> Result<Snapshot, String> {
+    app.state::<Runtime>().require_debug()?;
     let mut core = state.lock().unwrap();
     let unit = "reps".to_string();
     core.session.report_progress(Progress { value, unit, satisfied });
     let snap = persist_and_snapshot(&mut core);
+    drop(core);
+    if satisfied { hub::disable_metric_async(&app); }
     emit_snapshot(&app, &snap);
-    snap
+    Ok(snap)
 }
 
 #[tauri::command]
@@ -322,8 +450,12 @@ fn list_debug_videos(vision_dir: &Path) -> Vec<DebugVideo> {
 }
 
 #[tauri::command]
-fn debug_videos() -> Result<Vec<DebugVideo>, String> {
-    Ok(list_debug_videos(&vision_dir()?))
+fn debug_videos(app: AppHandle) -> Result<Vec<DebugVideo>, String> {
+    app.state::<Runtime>().require_debug()?;
+    if cfg!(debug_assertions) { return Ok(list_debug_videos(&vision_dir()?)); }
+    let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let video = resources.join("debug-videos/squat_demo.webm");
+    Ok(if video.is_file() { vec![DebugVideo { exercise: "squat".into(), path: video.display().to_string() }] } else { vec![] })
 }
 
 /// Managed state for the currently-running debug sidecar child, kept
@@ -365,8 +497,28 @@ fn debug_stream_start(
     video: String,
     exercise: String,
 ) -> Result<(), String> {
-    let vision_dir = vision_dir()?;
-
+    app.state::<Runtime>().require_debug()?;
+    if !Path::new(&video).is_file() { return Err("Video is missing; choose an available fixture".into()); }
+    let (vision_dir, plugin_dir, model) = if cfg!(debug_assertions) {
+        let dir = vision_dir()?;
+        (dir.clone(), dir.join("src"), None)
+    } else {
+        let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
+        (resources.join("hub-bundle/vision"), resources.join("reps-vision"), Some(resources.join("models/pose_landmarker_full.task")))
+    };
+    // Use the already provisioned environment directly: a single owned process,
+    // no uv wrapper or writes into installed resources.
+    let environment = std::env::var_os("UV_PROJECT_ENVIRONMENT").map(PathBuf::from).unwrap_or_else(|| {
+        if cfg!(debug_assertions) { vision_dir.join(".venv") }
+        else {
+            let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share"));
+            data.join("reps-for-claude/vision-env")
+        }
+    });
+    let python = environment.join(if cfg!(windows) { "Scripts/python.exe" } else { "bin/python" });
+    if !python.is_file() { return Err("Vision environment is not ready; wait for startup and try again".into()); }
+    hub::disable_metric_now(&app);
     let my_generation = {
         let mut guard = state.lock().unwrap();
         if let Some(child) = guard.child.as_mut() {
@@ -378,24 +530,13 @@ fn debug_stream_start(
         guard.generation
     };
 
-    let mut child = Command::new("uv")
-        .args([
-            "run",
-            "--extra",
-            "cv",
-            "python",
-            "-m",
-            "reps_vision.stream",
-            "--video",
-            &video,
-            "--exercise",
-            &exercise,
-            "--jpeg-every",
-            DEBUG_JPEG_EVERY,
-            "--target",
-            DEBUG_TARGET,
-        ])
-        .current_dir(&vision_dir)
+    let mut command = Command::new(python);
+    command.args([
+        "-m", "reps_vision.stream", "--video", &video, "--exercise", &exercise,
+        "--jpeg-every", DEBUG_JPEG_EVERY, "--target", DEBUG_TARGET,
+    ]).current_dir(&vision_dir).env("PYTHONPATH", plugin_dir).env("PYTHONDONTWRITEBYTECODE", "1");
+    if let Some(model) = model { command.env("REPS_POSE_MODEL", model); }
+    let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -412,7 +553,7 @@ fn debug_stream_start(
 
     {
         let mut guard = state.lock().unwrap();
-        if should_store_spawn(guard.generation, my_generation) {
+        if should_store_spawn(guard.generation, my_generation) && !app.state::<Runtime>().is_stopping() {
             guard.child = Some(child);
         } else {
             // Superseded by a newer debug_stream_start call that raced ahead
@@ -454,6 +595,10 @@ fn debug_stream_start(
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             let Ok(line) = line else { break };
+            if handle.state::<Runtime>().is_stopping() { break; }
+            let state = handle.state::<SharedDebugProcess>();
+            let generation_guard = state.lock().unwrap();
+            if generation_guard.generation != my_generation { break; }
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -496,18 +641,18 @@ fn debug_stream_start(
 }
 
 #[tauri::command]
-fn debug_stream_stop(state: State<SharedDebugProcess>) -> Result<(), String> {
-    let mut guard = state.lock().unwrap();
-    if let Some(child) = guard.child.as_mut() {
-        child.kill().map_err(|e| e.to_string())?;
-    }
+fn debug_stream_stop(app: AppHandle) -> Result<(), String> {
+    stop_debug_process(&app);
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let runtime = Runtime::load(dirs_next_data_dir()).expect("load application mode");
+    let core = build_core(&runtime.session_home);
     let app = tauri::Builder::default()
-        .manage(Mutex::new(build_core()) as SharedCore)
+        .manage(runtime)
+        .manage(Mutex::new(core) as SharedCore)
         .manage(Mutex::new(DebugProcess {
             generation: 0,
             child: None,
@@ -515,15 +660,31 @@ pub fn run() {
         .manage(Mutex::new(None) as hub::SharedHub)
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
+            get_app_mode,
+            set_app_mode,
+            show_gym,
+            emergency_escape,
             simulate_progress,
             confirm_weight,
             honor_complete,
             toggle_gym_fullscreen,
             debug_mode,
+            debug_exercises,
             debug_videos,
             debug_stream_start,
             debug_stream_stop
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    window.app_handle().exit(0);
+                } else if window.app_handle().state::<Runtime>().is_debug() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             hub::start(app.handle().clone());
             windows::place(app.handle());
@@ -532,7 +693,9 @@ pub fn run() {
             {
                 let clock = SystemClock;
                 let state = handle.state::<SharedCore>();
-                state.lock().unwrap().session.start(clock.now(), &clock.today());
+                if !handle.state::<Runtime>().is_debug() {
+                    state.lock().unwrap().session.start(clock.now(), &clock.today());
+                }
             }
             std::thread::spawn(move || {
                 let mut unlocked_since: Option<f64> = None;
@@ -542,7 +705,8 @@ pub fn run() {
                     let (now, today) = (clock.now(), clock.today());
                     let state = handle.state::<SharedCore>();
                     let mut core = state.lock().unwrap();
-                    let locked_now = core.session.tick(now, &today);
+                    if handle.state::<Runtime>().is_stopping() { break; }
+                    let locked_now = !handle.state::<Runtime>().is_debug() && core.session.tick(now, &today);
                     let mut snap = core.session.snapshot(now);
                     if locked_now {
                         // Emit EXERCISE_REQUIRED first so the durable lock events
@@ -554,7 +718,7 @@ pub fn run() {
                         enable_metric_for(&handle, &snap);
                     }
                     // The "LOGGED" beat: 3s in UNLOCKED, then CODE (main minimizes).
-                    if snap.phase == Phase::Unlocked {
+                    if !handle.state::<Runtime>().is_debug() && snap.phase == Phase::Unlocked {
                         let since = *unlocked_since.get_or_insert(now);
                         if now - since >= 3.0 {
                             core.session.resume_coding(now);
@@ -578,21 +742,32 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|handle, event| {
-        // Make sure the debug sidecar never survives the app: on shutdown,
-        // kill any child still tracked in SharedDebugProcess.
         if let RunEvent::ExitRequested { .. } = event {
-            let state = handle.state::<SharedDebugProcess>();
-            let mut guard = state.lock().unwrap();
-            if let Some(child) = guard.child.as_mut() {
-                let _ = child.kill();
-            }
+            handle.state::<Runtime>().begin_stop();
+            shutdown_runtime(handle);
         }
+
     });
 }
 
 #[cfg(test)]
 mod debug_view_tests {
     use super::*;
+    #[test]
+    fn selectable_exercises_cover_every_shipped_detector_with_correct_units() {
+        let options = debug_exercise_options().unwrap();
+        let specs = hub::load_exercise_specs().unwrap();
+        assert_eq!(options.len(), specs["exercises"].as_object().unwrap().len());
+        for rx in options {
+            assert!(specs["exercises"].get(&rx.exercise).is_some());
+            match rx.exercise.as_str() {
+                "jumprope" => { assert_eq!(rx.kind, ExerciseKind::Continuous); assert_eq!(rx.target_seconds, 60.0); }
+                "stretch" => { assert_eq!(rx.kind, ExerciseKind::Continuous); assert_eq!(rx.target_seconds, 30.0); }
+                _ => { assert_eq!(rx.kind, ExerciseKind::Rep); assert_eq!(rx.target_reps, 10); }
+            }
+        }
+    }
+
     use std::fs;
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -600,6 +775,22 @@ mod debug_view_tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn local_routine_prescribes_a_custom_movement_without_a_build() {
+        let dir = temp_dir("routine");
+        assert!(load_daily_plan(&dir, "today").is_ok());
+        fs::write(dir.join("routine.json"), r#"{
+            "lifts":[{"exercise":"my-curl","sets":2,"reps":8}]
+        }"#).unwrap();
+        let mut plan = load_daily_plan(&dir, "today").unwrap();
+        let prescription = plan.prescribe().unwrap();
+        assert_eq!(prescription.exercise, "my-curl");
+        assert_eq!(prescription.target_reps, 8);
+        fs::write(dir.join("routine.json"), "invalid").unwrap();
+        assert!(load_daily_plan(&dir, "today").is_err());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

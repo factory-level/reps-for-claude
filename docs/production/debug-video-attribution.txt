@@ -1,0 +1,6 @@
+Squat - exercise demonstration video
+Author: FitnessScape
+Source: https://commons.wikimedia.org/wiki/File:Squat_-_exercise_demonstration_video.webm
+License: Creative Commons Attribution 3.0 Unported
+https://creativecommons.org/licenses/by/3.0/
+The bundled source video is unmodified. The inspection view adds a live detector overlay.

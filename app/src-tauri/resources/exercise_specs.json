@@ -3,7 +3,7 @@
   "model": {
     "plugin": "reps_vision",
     "name": "mediapipe-pose-landmarker",
-    "variant": "lite"
+    "variant": "full"
   },
   "exercises": {
     "pushup": {

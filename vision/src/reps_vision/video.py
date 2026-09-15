@@ -85,7 +85,8 @@ class VideoRepCounter(RepCounter):
                 ok, frame = cap.read()  # type: ignore[attr-defined]
                 if not ok:
                     break  # end of file / camera gone
-                landmarks = estimator.landmarks(frame)  # type: ignore[attr-defined]
+                source_ms = self._position_ms(cap) if isinstance(self._source, str) else None
+                landmarks = estimator.landmarks(frame, timestamp_ms=source_ms)  # type: ignore[attr-defined]
                 current = spec.angle_from(landmarks) if landmarks else None
                 if current is not None and machine.update(current):
                     count += 1

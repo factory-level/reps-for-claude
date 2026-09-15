@@ -12,6 +12,8 @@ use tauri::{AppHandle, Manager, Position, WindowEvent};
 
 use crate::SharedCore;
 
+static WINDOW_ACTIONS: Mutex<()> = Mutex::new(());
+
 static LOCKED: AtomicBool = AtomicBool::new(false);
 /// Other apps' windows we iconified for the lock; mapped back on unlock.
 static HIDDEN: Mutex<Vec<u32>> = Mutex::new(Vec::new());
@@ -67,9 +69,15 @@ fn remember(app: &AppHandle, key: &str, value: &str) {
 
 /// Startup placement: main on the primary monitor, gym on its monitor.
 pub(crate) fn place(app: &AppHandle) {
+    if app.state::<crate::Runtime>().is_debug() {
+        if let Some(main) = app.get_webview_window("main") { let _ = main.show(); }
+        return;
+    }
     let (Some(main), Some(gym)) = (app.get_webview_window("main"), app.get_webview_window("gym")) else {
         return;
     };
+    let _ = main.show();
+    let _ = gym.show();
     let monitors = main.available_monitors().unwrap_or_default();
     let primary = main.primary_monitor().ok().flatten();
     let names: Vec<&str> = monitors.iter().map(|m| m.name().map(String::as_str).unwrap_or("")).collect();
@@ -99,6 +107,7 @@ pub(crate) fn place(app: &AppHandle) {
     let handle = app.clone();
     let watched = gym.clone();
     gym.on_window_event(move |e| {
+        if !handle.state::<crate::Runtime>().enforces_windows() { return; }
         if let WindowEvent::Moved(_) = e {
             if let Ok(Some(m)) = watched.current_monitor() {
                 if let Some(name) = m.name() {
@@ -120,6 +129,7 @@ fn gym_wants_fullscreen(app: &AppHandle) -> bool {
 
 /// F11 in the gym window: flip fullscreen and remember it.
 pub(crate) fn toggle_gym_fullscreen(app: &AppHandle) {
+    if !app.state::<crate::Runtime>().enforces_windows() { return; }
     let Some(gym) = app.get_webview_window("gym") else { return };
     let on = !gym.is_fullscreen().unwrap_or(false);
     remember(app, GYM_FULLSCREEN, if on { "1" } else { "0" });
@@ -132,6 +142,8 @@ pub(crate) fn toggle_gym_fullscreen(app: &AppHandle) {
 /// Once a second: whatever un-fullscreened the gym display (a workspace
 /// switch, a stray key), put it back — unless the user F11'd out on purpose.
 pub(crate) fn assert_gym(app: &AppHandle) {
+    let _guard = WINDOW_ACTIONS.lock().unwrap();
+    if !app.state::<crate::Runtime>().enforces_windows() { return; }
     let Some(gym) = app.get_webview_window("gym") else { return };
     if gym_wants_fullscreen(app) && !gym.is_fullscreen().unwrap_or(true) {
         let _ = gym.set_fullscreen(true);
@@ -141,6 +153,8 @@ pub(crate) fn assert_gym(app: &AppHandle) {
 /// Lock/unlock the programming monitor. Idempotent; safe from any thread.
 /// The gym window is never touched here.
 pub(crate) fn apply_lock(app: &AppHandle, locked: bool) {
+    let _guard = WINDOW_ACTIONS.lock().unwrap();
+    if !app.state::<crate::Runtime>().enforces_windows() { return; }
     if LOCKED.swap(locked, Ordering::SeqCst) == locked {
         return;
     }
@@ -164,6 +178,8 @@ pub(crate) fn apply_lock(app: &AppHandle, locked: bool) {
 /// Take over the view: once a second while locked, un-minimize, raise and
 /// focus the lock window — whichever workspace or app the user wandered to.
 pub(crate) fn refocus(app: &AppHandle) {
+    let _guard = WINDOW_ACTIONS.lock().unwrap();
+    if !app.state::<crate::Runtime>().enforces_windows() { return; }
     if !LOCKED.load(Ordering::SeqCst) {
         return;
     }
@@ -192,4 +208,19 @@ mod tests {
         // A remembered monitor that's unplugged falls back to the other one.
         assert_eq!(pick_gym_monitor(&names, "HDMI-0", Some("gone")), Some(1));
     }
+}
+
+/// Release only windows this process hid; never minimize unrelated windows here.
+pub(crate) fn release(app: &AppHandle) {
+    let _guard = WINDOW_ACTIONS.lock().unwrap();
+    LOCKED.store(false, Ordering::SeqCst);
+    for label in ["main", "gym"] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.set_fullscreen(false);
+            let _ = window.set_always_on_top(false);
+            let _ = window.set_visible_on_all_workspaces(false);
+            let _ = window.set_decorations(true);
+        }
+    }
+    give_back();
 }
