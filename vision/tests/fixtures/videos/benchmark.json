@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "evidence": "public-video-regression",
+  "clips": [
+    {
+      "id": "interval_pushups",
+      "file": "interval_pushups.webm",
+      "exercise": "pushup",
+      "expectedReps": 6,
+      "sha256": "e93ea83a78d47c27972f245a61d114118793598cfd059c318e120c453fd40bbe",
+      "source": "https://commons.wikimedia.org/wiki/File:Interval_Push-ups.webm",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/98/Interval_Push-ups.webm",
+      "license": "CC BY-SA 4.0",
+      "labelBasis": "Single-reviewer visual completion estimates from source frames; 500 ms matching tolerance. Development labels, not held-out gym evidence. Fifth completion reviewed at 250 ms intervals: full extension by 40.75 s.",
+      "completionTimesMs": [
+        8250,
+        16250,
+        24500,
+        32500,
+        40750,
+        48500
+      ],
+      "author": "Taco Fleur",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+    },
+    {
+      "id": "squat_demo",
+      "file": "squat_demo.webm",
+      "exercise": "squat",
+      "expectedReps": 2,
+      "sha256": "2440985661c3533a4ce78472b0f4577dbdf023aff3f8f9a225bbb5ff8071b1e9",
+      "source": "https://commons.wikimedia.org/wiki/File:Squat_-_exercise_demonstration_video.webm",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Squat_-_exercise_demonstration_video.webm",
+      "license": "CC BY 3.0",
+      "labelBasis": "Single-reviewer visual completion estimates from source frames; 500 ms matching tolerance. Development labels, not held-out gym evidence.",
+      "completionTimesMs": [
+        3500,
+        6500
+      ],
+      "author": "FitnessScape",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/"
+    },
+    {
+      "id": "kb_racked_squats_side",
+      "file": "kb_racked_squats_side.webm",
+      "exercise": "squat",
+      "expectedReps": 6,
+      "sha256": "5e0ded0810d73db0acfb3bbdf71a181e512607db16c1fde8d2ed30bb18ca840d",
+      "source": "https://commons.wikimedia.org/wiki/File:Kettlebell_Racked_Squats_(side_view).webm",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/93/Kettlebell_Racked_Squats_%28side_view%29.webm",
+      "license": "CC BY-SA 4.0",
+      "labelBasis": "Single-reviewer visual completion estimates from source frames; 500 ms matching tolerance. Development labels, not held-out gym evidence.",
+      "completionTimesMs": [
+        7000,
+        14250,
+        22500,
+        30500,
+        39000,
+        46750
+      ],
+      "author": "Taco Fleur",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+    },
+    {
+      "id": "curl-steady-camera",
+      "file": "ez_bar_curl.webm",
+      "exercise": "curl",
+      "expectedReps": 2,
+      "startMs": 44500,
+      "endMs": 49700,
+      "sha256": "a8c89f5a9d41b8e459892cb149c0a90ff2694165aabdba9b6e801175eb2d5e27",
+      "source": "https://commons.wikimedia.org/wiki/File:Video_of_EZ_Bar_Curl_and_Straight_Bar_Curl.webm",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Video_of_EZ_Bar_Curl_and_Straight_Bar_Curl.webm",
+      "license": "CC BY 3.0",
+      "author": "Colossus Fitness",
+      "labelBasis": "Two visually reviewed full cycles with steady camera, after the preceding camera transition. Single-reviewer development evidence.",
+      "required": true,
+      "completionTimesMs": [
+        47000,
+        49250
+      ],
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/"
+    },
+    {
+      "id": "curl-camera-cuts",
+      "file": "ez_bar_curl.webm",
+      "exercise": "curl",
+      "expectedReps": 9,
+      "startMs": 43000,
+      "endMs": 63000,
+      "sha256": "a8c89f5a9d41b8e459892cb149c0a90ff2694165aabdba9b6e801175eb2d5e27",
+      "source": "https://commons.wikimedia.org/wiki/File:Video_of_EZ_Bar_Curl_and_Straight_Bar_Curl.webm",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Video_of_EZ_Bar_Curl_and_Straight_Bar_Curl.webm",
+      "license": "CC BY 3.0",
+      "author": "Colossus Fitness",
+      "labelBasis": "Nine visually observed cycles across changing camera angles and cropped shoulders. Exploratory challenge; missing joints correctly interrupt tracking.",
+      "required": false,
+      "completionTimesMs": [
+        44750,
+        47000,
+        49250,
+        51750,
+        53750,
+        56000,
+        58000,
+        60250,
+        62250
+      ],
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/"
+    },
+    {
+      "id": "squat-standing-negative",
+      "file": "kb_racked_squats_side.webm",
+      "exercise": "squat",
+      "expectedReps": 0,
+      "sha256": "5e0ded0810d73db0acfb3bbdf71a181e512607db16c1fde8d2ed30bb18ca840d",
+      "source": "https://commons.wikimedia.org/wiki/File:Kettlebell_Racked_Squats_(side_view).webm",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/93/Kettlebell_Racked_Squats_%28side_view%29.webm",
+      "license": "CC BY-SA 4.0",
+      "labelBasis": "Visual review: standing still between sets; zero completed squats.",
+      "completionTimesMs": [],
+      "author": "Taco Fleur",
+      "startMs": 8000,
+      "endMs": 11000,
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+    }
+  ]
+}

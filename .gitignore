@@ -4,12 +4,12 @@ __pycache__/
 dist/
 *.egg-info/
 .pytest_cache/
-uv.lock
 
 # Downloaded video fixtures are reproducible via scripts/fetch_fixtures.py.
 # The small CC BY squat clip is committed as an in-repo sample; the rest aren't.
 vision/tests/fixtures/videos/*
 !vision/tests/fixtures/videos/squat_demo.webm
+!vision/tests/fixtures/videos/benchmark.json
 
 # YouTube debug clips (scripts/fetch_youtube.py) — regenerate locally, never commit.
 vision/tests/fixtures/videos/youtube/
@@ -18,3 +18,10 @@ app/src-tauri/resources/companion/
 
 # Local tooling (Higgsfield CLI)
 node_modules/
+
+# Reproducible staged release resources
+app/src-tauri/resources/reps-vision/
+app/src-tauri/resources/models/
+app/src-tauri/resources/boot-hub.mjs
+
+app/src-tauri/resources/debug-videos/

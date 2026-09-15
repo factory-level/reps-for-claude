@@ -39,10 +39,8 @@ export function DebugPanel() {
       if (cancelled) return;
       setVideos(vs);
       if (vs.length > 0) setSelectedPath(vs[0].path);
-    });
-    return () => {
-      cancelled = true;
-    };
+    }).catch(reason => { if (!cancelled) setStartError(`Could not list videos: ${String(reason)}`); });
+    return () => { cancelled = true; void invoke("debug_stream_stop").catch(() => {}); };
   }, []);
 
   useEffect(() => {
@@ -116,13 +114,15 @@ export function DebugPanel() {
 
   function stop() {
     setRunning(false);
-    void invoke("debug_stream_stop");
+    void invoke("debug_stream_stop").catch(reason => setStartError(String(reason)));
   }
 
   return (
     <section>
-      <h2>Detection Debug</h2>
-      <select value={selectedPath} onChange={(e) => setSelectedPath(e.target.value)}>
+      <h2>Video inspection</h2>
+      <p>Recorded video only · legacy counter preview · no workout credit</p>
+      {videos.length === 0 && <p>No bundled videos found. Rebuild the app resources to include the squat sample.</p>}
+      <select aria-label="Exercise video" value={selectedPath} onChange={(e) => setSelectedPath(e.target.value)}>
         {videos.map((v) => (
           <option key={v.path} value={v.path}>
             {v.exercise}

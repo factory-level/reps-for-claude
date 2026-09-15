@@ -29,7 +29,7 @@ class FakeEstimator:
     def __init__(self, frames):
         self.frames = list(frames)
 
-    def landmarks(self, frame_bgr):
+    def landmarks(self, frame_bgr, *, timestamp_ms=None):
         return self.frames.pop(0) if self.frames else None
 
     def close(self):
@@ -70,7 +70,7 @@ def test_capabilities_declare_model_schema_and_observation_kinds():
     assert set(caps["supports"]) == {"evaluate", "stream"}
     # the consumer (reps-for-claude) declares the model it uses
     assert caps["model"]["name"] == "mediapipe-pose-landmarker"
-    assert caps["model"]["variant"] == "lite"
+    assert caps["model"]["variant"] == "full"
     field_names = [f["name"] for f in caps["configSchema"]["fields"]]
     assert "activity" in field_names
     assert "exercise.downBelow" in field_names
@@ -106,7 +106,8 @@ def test_stream_emits_landmarks_progress_and_rep_events():
     estimator = FakeEstimator(poses)
     capture = FakeCapture(len(poses))
     plugin = make_plugin(estimator, capture)
-    plugin.configure(SQUAT_CONFIG)
+    provenance = {"movementId": "squat", "movementVersion": "v1", "sessionId": "workout-1", "detectionId": "run-1"}
+    plugin.configure({**SQUAT_CONFIG, **provenance})
 
     emitted = []
     plugin.start_stream({"camera": {"source": "index", "value": 0}}, lambda s, d: emitted.append((s, d)))
@@ -114,6 +115,7 @@ def test_stream_emits_landmarks_progress_and_rep_events():
     plugin.stop_stream()
 
     assert capture.released
+    assert all(all(data.get(key) == value for key, value in provenance.items()) for _, data in frames)
     streams = {s for s, _ in frames}
     assert {"landmarks", "progress", "event"} <= streams
     landmark_frames = [d for s, d in frames if s == "landmarks"]
@@ -131,6 +133,12 @@ def test_stream_emits_landmarks_progress_and_rep_events():
     progress = [d for s, d in frames if s == "progress"]
     assert progress[-1]["value"] == 2.0
     assert progress[-1]["satisfied"] is True
+    committed_count = 0
+    for stream, data in frames:
+        if stream == "event" and data["type"] == "rep_completed":
+            committed_count = data["count"]
+        if stream == "progress":
+            assert data["value"] == committed_count
 
 
 def test_stream_reports_zero_visibility_without_pose():
@@ -175,9 +183,9 @@ def test_cv2_capture_passes_uri_sources_through():
         capture = plugin_module._cv2_capture(
             {"source": "uri", "value": "rtsp://127.0.0.1:8554/front"}
         )
-        assert capture.value == "rtsp://127.0.0.1:8554/front"
+        assert capture.capture.value == "rtsp://127.0.0.1:8554/front"
         capture = plugin_module._cv2_capture({"source": "index", "value": "0"})
-        assert capture.value == 0
+        assert capture.capture.value == 0
     finally:
         if real is not None:
             sys.modules["cv2"] = real
@@ -242,3 +250,18 @@ def test_evaluate_single_frame_reports_pose_and_angle():
     )
     plugin2.configure(SQUAT_CONFIG)
     assert plugin2.evaluate("/tmp/f.jpg")["poseDetected"] is False
+
+
+def test_replay_source_timestamps_reach_pose_estimator():
+    from reps_vision.hub_plugin.stream_loop import StreamLoop
+    from types import SimpleNamespace
+
+    received = []
+    estimator = FakeEstimator([None] * 3)
+    estimator.landmarks = lambda frame, *, timestamp_ms: received.append(timestamp_ms)
+    activity = SimpleNamespace(update=lambda *_: SimpleNamespace(value=0, unit='reps', satisfied=False))
+    loop = StreamLoop(activity=activity, spec=None, estimator=estimator,
+                      capture=FakeCapture(3), emit=lambda *_: None,
+                      frame_times_ms=[0, 125, 900])
+    loop._run()
+    assert received == [0, 125, 900]

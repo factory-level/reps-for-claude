@@ -179,6 +179,18 @@ impl Session {
         }
     }
 
+    /// Start a manually selected detector test, independent of the daily plan.
+    /// The desktop caller must require Debug mode and use its isolated store.
+    pub fn debug_start_exercise(&mut self, prescription: Prescription) {
+        self.timer.stop();
+        self.plan = None;
+        self.pending_record = None;
+        self.progress = None;
+        self.verified = false;
+        self.prescription = Some(prescription);
+        self.phase = Phase::WorkoutActive;
+    }
+
     /// DEBUG: return to the coding phase from any phase (the caller releases the
     /// camera). Re-arms the coding timer.
     pub fn debug_force_coding(&mut self, now: f64) {
@@ -330,6 +342,24 @@ mod tests {
         s.tick(360.0, "2026-07-19");
         // long workout: coding timer must not be running
         assert_eq!(s.snapshot(10_000.0).remaining_seconds, 360.0);
+    }
+
+    #[test]
+    fn selected_debug_exercise_replaces_progress_and_uses_timed_target() {
+        let mut s = session();
+        s.debug_force_workout(0.0, "2026-09-15");
+        s.report_progress(Progress { value: 3.0, unit: "reps".into(), satisfied: false });
+        s.debug_start_exercise(crate::types::Prescription { exercise: "jumprope".into(), kind: ExerciseKind::Continuous,
+            target_reps: 0, target_seconds: 60.0, default_weight: 0.0 });
+        let snap = s.snapshot(1000.0);
+        assert_eq!(snap.phase, Phase::WorkoutActive);
+        assert!(snap.progress.is_none());
+        assert_eq!(snap.prescription.unwrap().exercise, "jumprope");
+        assert!(!s.tick(10000.0, "2026-09-15"));
+        s.report_progress(done("seconds", 60.0));
+        let record = s.take_pending_record().unwrap();
+        assert_eq!(record.exercise, "jumprope");
+        assert_eq!(record.seconds, 60.0);
     }
 
     #[test]

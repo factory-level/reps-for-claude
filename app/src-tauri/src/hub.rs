@@ -42,25 +42,23 @@ pub fn reps_manifest() -> serde_json::Value {
 }
 
 // ---- Durable publishing -------------------------------------------------
-// One background thread owns all publish traffic so no UI or state path ever
-// blocks on the hub. Messages queue while the hub is down and flush on
-// reconnect; a message that keeps failing is retried, then dropped loudly.
+// Persist on the calling thread, publish in the background, and delete only
+// after acknowledgement. No network request runs on a UI/state path.
+use hub_client::outbox::{Outbox, Publication as Publish};
 
-enum Publish {
-    Event(serde_json::Value),
-    Command(serde_json::Value),
-    ActionResult(serde_json::Value),
+struct Publisher {
+    outbox: Outbox,
+    wake: std::sync::mpsc::SyncSender<()>,
+    app: AppHandle,
 }
 
-static PUBLISH_TX: Mutex<Option<std::sync::mpsc::Sender<Publish>>> = Mutex::new(None);
+static PUBLICATIONS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PUBLISHER: Mutex<Option<Publisher>> = Mutex::new(None);
+static DETECTOR_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static SESSION_ID: Mutex<Option<String>> = Mutex::new(None);
 
 fn new_session_id() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let id = format!("sess-{nanos}");
+    let id = format!("sess-{}", uuid::Uuid::new_v4());
     *SESSION_ID.lock().unwrap() = Some(id.clone());
     id
 }
@@ -69,15 +67,40 @@ fn session_id() -> Option<String> {
     SESSION_ID.lock().unwrap().clone()
 }
 
-fn queue(message: Publish) {
-    if let Some(tx) = PUBLISH_TX.lock().unwrap().as_ref() {
-        let _ = tx.send(message);
+fn queue(mut message: Publish) {
+    if !PUBLICATIONS_ENABLED.load(std::sync::atomic::Ordering::SeqCst) { return; }
+    // Hub timestamps describe acceptance, which may follow an offline period.
+    // Preserve when the desktop observed the fact in the immutable queued body.
+    let params = match &mut message {
+        Publish::Event(p) | Publish::Command(p) | Publish::ActionResult(p) => p,
+    };
+    if let Some(payload) = params.get_mut("payload").and_then(serde_json::Value::as_object_mut) {
+        payload.entry("occurredAtMs").or_insert_with(|| serde_json::json!(publication_time_ms()));
     }
+    let failure = {
+        let mut guard = PUBLISHER.lock().unwrap();
+        match guard.as_mut() {
+            Some(publisher) => match publisher.outbox.enqueue(&message) {
+                Ok(()) => { let _ = publisher.wake.try_send(()); None }
+                Err(error) => Some((publisher.app.clone(), error)),
+            },
+            None => {
+                eprintln!("[EVENTS] publication rejected: durable outbox unavailable");
+                None
+            }
+        }
+    };
+    if let Some((app, error)) = failure { publication_storage_error(&app, &error); }
 }
 
-/// Queue an app event for durable publication (fire-and-forget, never blocks).
+fn publication_storage_error(app: &AppHandle, error: &str) {
+    eprintln!("[EVENTS] durable publication failed: {error}");
+    let _ = app.emit("vision-fallback", serde_json::json!({"reason": "local event storage unavailable", "details": error}));
+}
+
+/// Persist an app event locally, then publish asynchronously to the hub.
 pub fn queue_event(event_type: &str, payload: serde_json::Value) {
-    let mut params = serde_json::json!({"appId": APP_ID, "type": event_type, "payload": payload});
+    let mut params = serde_json::json!({"appId": APP_ID, "type": event_type, "id": format!("evt-{}", new_message_id()), "payload": payload});
     if let Some(sid) = session_id() {
         params["sessionId"] = serde_json::json!(sid);
     }
@@ -85,7 +108,7 @@ pub fn queue_event(event_type: &str, payload: serde_json::Value) {
 }
 
 fn queue_command(command_type: &str, payload: serde_json::Value) -> String {
-    let id = format!("cmd-{}", new_msg_nanos());
+    let id = format!("cmd-{}", new_message_id());
     let mut params =
         serde_json::json!({"appId": APP_ID, "type": command_type, "id": id, "payload": payload});
     if let Some(sid) = session_id() {
@@ -97,7 +120,7 @@ fn queue_command(command_type: &str, payload: serde_json::Value) -> String {
 
 fn queue_action_result(result_type: &str, command_id: &str, status: &str) {
     let mut params = serde_json::json!({
-        "appId": APP_ID, "type": result_type, "commandId": command_id, "status": status,
+        "appId": APP_ID, "id": format!("result-{}", new_message_id()), "type": result_type, "commandId": command_id, "status": status,
         "payload": {},
     });
     if let Some(sid) = session_id() {
@@ -106,58 +129,69 @@ fn queue_action_result(result_type: &str, command_id: &str, status: &str) {
     queue(Publish::ActionResult(params));
 }
 
-fn new_msg_nanos() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0)
+fn new_message_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
-/// Start the publisher thread: drains the queue against SharedHub, retrying
-/// while the hub is down so history survives restarts. Idempotent.
-fn start_publisher(app: AppHandle) {
-    let (tx, rx) = std::sync::mpsc::channel::<Publish>();
-    {
-        let mut guard = PUBLISH_TX.lock().unwrap();
-        if guard.is_some() {
-            return; // already running
-        }
-        *guard = Some(tx);
-    }
-    std::thread::Builder::new()
-        .name("hub-publish".into())
-        .spawn(move || {
-            for message in rx {
-                let mut attempts = 0u32;
-                loop {
-                    let state = app.state::<SharedHub>();
-                    let mut guard = state.lock().unwrap();
-                    let outcome = match guard.as_mut() {
-                        Some(hub) => match &message {
-                            Publish::Event(p) => hub.publish_event(p),
-                            Publish::Command(p) => hub.publish_command(p),
-                            Publish::ActionResult(p) => hub.report_action_result(p),
-                        },
-                        None => Err(hub_client::HubError::Down),
-                    };
-                    drop(guard);
-                    match outcome {
-                        Ok(()) => break,
-                        Err(err) => {
-                            attempts += 1;
-                            if attempts >= 150 {
-                                // ~5 minutes of a dead hub: drop loudly rather
-                                // than damming every later event behind it.
-                                eprintln!("[EVENTS] ⚠ dropping unpublished message after retries: {err}");
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_secs(2));
-                        }
-                    }
-                }
+fn publication_time_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().min(i64::MAX as u128) as i64).unwrap_or(0)
+}
+
+/// Open the durable queue before hub startup, including publications made while
+/// the hub is unavailable. FIFO retries preserve command/result ordering.
+fn start_publisher(app: AppHandle) -> Result<(), String> {
+    let mut guard = PUBLISHER.lock().unwrap();
+    if guard.is_some() { return Ok(()); }
+    let dir = crate::dirs_next_data_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let outbox = Outbox::open(&dir.join("publications.sqlite"))?;
+    let (wake, rx) = std::sync::mpsc::sync_channel(1);
+    let worker_app = app.clone();
+    std::thread::Builder::new().name("hub-publish".into()).spawn(move || loop {
+        let pending = {
+            let guard = PUBLISHER.lock().unwrap();
+            guard.as_ref().map(|p| p.outbox.next(publication_time_ms())).transpose()
+        };
+        let pending = match pending {
+            Ok(Some(Some(pending))) => pending,
+            Ok(_) => { let _ = rx.recv_timeout(std::time::Duration::from_millis(250)); continue; }
+            Err(error) => {
+                publication_storage_error(&worker_app, &error);
+                let _ = rx.recv_timeout(std::time::Duration::from_secs(2));
+                continue;
             }
-        })
-        .ok();
+        };
+        let outcome = {
+            let state = worker_app.state::<SharedHub>();
+            let mut hub = state.lock().unwrap();
+            match hub.as_mut() {
+                Some(hub) => hub.register_application(APP_ID, env!("CARGO_PKG_VERSION"), &reps_manifest())
+                    .and_then(|()| match &pending.publication {
+                        Publish::Event(p) => hub.publish_event(p),
+                        Publish::Command(p) => hub.publish_command(p),
+                        Publish::ActionResult(p) => hub.report_action_result(p),
+                    }),
+                None => Err(hub_client::HubError::Down),
+            }
+        };
+        let saved = {
+            let guard = PUBLISHER.lock().unwrap();
+            let outbox = &guard.as_ref().expect("publisher initialized").outbox;
+            match &outcome {
+                Ok(()) => outbox.acknowledge(pending.sequence),
+                Err(error) => outbox.retry(&pending, publication_time_ms(), &error.to_string()),
+            }
+        };
+        if let Err(error) = saved { publication_storage_error(&worker_app, &error); }
+        if let Err(error) = outcome {
+            if pending.attempts == 0 || (pending.attempts + 1).is_power_of_two() {
+                eprintln!("[EVENTS] publication retained for retry: {error}");
+            }
+        }
+    }).map_err(|e| e.to_string())?;
+    *guard = Some(Publisher { outbox, wake, app });
+    Ok(())
 }
 
 /// The durable events implied by a phase change — pure so the mapping is
@@ -267,9 +301,18 @@ pub fn metric_config_for(
     target_seconds: f64,
 ) -> Option<(String, serde_json::Value)> {
     let plugin_id = specs["model"]["plugin"].as_str()?.to_string();
-    let mut config = specs["exercises"].get(exercise)?.clone();
+    let mut config = match specs["exercises"].get(exercise) {
+        Some(config) => config.clone(),
+        // A Studio movement needs no compiled exercise registry entry. Without
+        // a legacy exercise fallback the hub requires an activated version.
+        None if target_reps > 0 && !exercise.trim().is_empty() => {
+            serde_json::json!({"activity": "lift", "movementId": exercise})
+        }
+        None => return None,
+    };
     let object = config.as_object_mut()?;
     if object.get("activity").and_then(|a| a.as_str()) == Some("lift") {
+        object.insert("movementId".into(), serde_json::json!(exercise));
         object.insert("targetReps".into(), serde_json::json!(target_reps));
     } else if target_seconds > 0.0 {
         object.insert("targetSeconds".into(), serde_json::json!(target_seconds));
@@ -384,6 +427,11 @@ pub fn enable_on_hub(
 /// Start the supervisor in the background and pump its events into the
 /// session. No-op when REPS_HUB_DISABLED is set (dev without a hub).
 pub fn start(app: AppHandle) {
+    PUBLICATIONS_ENABLED.store(!app.state::<crate::Runtime>().is_debug(), std::sync::atomic::Ordering::SeqCst);
+    if let Err(error) = if app.state::<crate::Runtime>().is_debug() { Ok(()) } else { start_publisher(app.clone()) } {
+        publication_storage_error(&app, &error);
+        return;
+    }
     if std::env::var("REPS_HUB_DISABLED").is_ok() {
         eprintln!("hub: disabled by REPS_HUB_DISABLED");
         return;
@@ -396,9 +444,33 @@ pub fn start(app: AppHandle) {
                 .nth(2)
                 .expect("repo root")
                 .to_path_buf();
-            let config = HubSupervisorConfig::dev(&repo_root);
+            let mut config = if cfg!(debug_assertions) {
+                HubSupervisorConfig::dev(&repo_root)
+            } else {
+                match app.path().resource_dir() {
+                    Ok(resources) => HubSupervisorConfig::bundled(&resources, &resources.join("reps-vision")),
+                    Err(err) => {
+                        let _ = app.emit("vision-fallback", serde_json::json!({"reason": err.to_string()}));
+                        return;
+                    }
+                }
+            };
+            if app.state::<crate::Runtime>().is_debug() {
+                config.env.extend([
+                    ("HUB_DATA_DIR".into(), app.state::<crate::Runtime>().session_home.join("hub").display().to_string()),
+                    ("PORT".into(), "0".into()), ("DEBUG_PORT".into(), "0".into()),
+                    ("HUB_BIND_HOST".into(), "127.0.0.1".into()),
+                    ("HUB_CERT_DIR".into(), app.state::<crate::Runtime>().session_home.join("no-certs").display().to_string()),
+                ]);
+            }
+            let state = app.state::<SharedHub>();
+            let mut slot = state.lock().unwrap();
+            if app.state::<crate::Runtime>().is_stopping() { return; }
             match HubSupervisor::start(config) {
                 Ok(mut supervisor) => {
+                    if app.state::<crate::Runtime>().is_stopping() { return; }
+                    // A desktop restart begins idle rather than restoring an old camera stream.
+                    let _ = supervisor.disable_metric(WORKOUT_METRIC);
                     let receiver = supervisor.take_receiver();
                     // Register the app manifest before anything publishes; the
                     // hub rejects event types it has not seen registered.
@@ -409,8 +481,8 @@ pub fn start(app: AppHandle) {
                     ) {
                         eprintln!("hub: register_application failed: {err}");
                     }
-                    *app.state::<SharedHub>().lock().unwrap() = Some(Box::new(supervisor));
-                    start_publisher(app.clone());
+                    *slot = Some(Box::new(supervisor));
+                    drop(slot);
                     let _ = app.emit("vision-event", serde_json::json!({"kind": "hub_up"}));
                     if let Some(rx) = receiver {
                         pump_events(app, rx);
@@ -448,11 +520,16 @@ fn print_detect(data: &serde_json::Value) {
 
 fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
     for event in rx {
+        if app.state::<crate::Runtime>().is_stopping() { break; }
         match event {
             // Landmarks are terminal-only now: nothing in the webviews listens,
             // and pushing them at camera rate into both windows leaked memory.
             VisionEvent::Landmarks(data) => print_detect(&data),
-            VisionEvent::Progress { value, unit, satisfied } => {
+            VisionEvent::Progress { value, unit, satisfied, context } => {
+                if !DETECTOR_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) { continue; }
+                if !context.belongs_to(WORKOUT_METRIC, session_id().as_deref()) {
+                    continue;
+                }
                 let core_state = app.state::<crate::SharedCore>();
                 let mut core = core_state.lock().unwrap();
                 core.session.report_progress(Progress { value, unit, satisfied });
@@ -464,6 +541,9 @@ fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
                 }
             }
             VisionEvent::Semantic { kind, payload } => {
+                if kind == "detector_error" || kind == "stream_ended" {
+                    let _ = app.emit("vision-fallback", serde_json::json!({"reason": kind, "details": payload}));
+                }
                 if kind == "rep_completed" || kind == "target_reached" {
                     println!("[DETECT] ✓ {}", kind);
                 }
@@ -501,8 +581,10 @@ fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
 /// Enable the workout metric for the current prescription (fire-and-forget;
 /// failures surface as vision-fallback so the UI offers honor mode).
 pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, target_seconds: f64) {
+    let generation = app.state::<crate::Runtime>().detector_generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     let app = app.clone();
     std::thread::spawn(move || {
+        if app.state::<crate::Runtime>().is_stopping() { return; }
         let specs = match load_exercise_specs() {
             Ok(specs) => specs,
             Err(err) => {
@@ -524,11 +606,18 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
             );
             return;
         };
+
+        config["appId"] = serde_json::json!(APP_ID);
         let camera_set = apply_camera_set(&specs, &mut config);
         let state = app.state::<SharedHub>();
         let mut guard = state.lock().unwrap();
+        if app.state::<crate::Runtime>().is_stopping() ||
+            app.state::<crate::Runtime>().detector_generation.load(std::sync::atomic::Ordering::SeqCst) != generation { return; }
+        let sid = if app.state::<crate::Runtime>().is_debug() { new_session_id() } else { session_id().unwrap_or_else(new_session_id) };
+        config["sessionId"] = serde_json::json!(sid);
         match guard.as_mut() {
             Some(hub) => {
+                DETECTOR_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
                 let request = EnableMetric {
                     metric_id: WORKOUT_METRIC.into(),
                     plugin_id,
@@ -541,6 +630,7 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
                         queue_event("detector_started", serde_json::json!({"exercise": exercise}));
                     }
                     Err(err) => {
+                        DETECTOR_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
                         drop(guard);
                         eprintln!("hub: enable_metric failed: {err}");
                         queue_event(
@@ -570,20 +660,29 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
 
 /// Disable the workout metric (camera released). Fire-and-forget.
 pub fn disable_metric_async(app: &AppHandle) {
+    let generation = app.state::<crate::Runtime>().detector_generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    DETECTOR_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
     let app = app.clone();
     std::thread::spawn(move || {
         let state = app.state::<SharedHub>();
         let mut guard = state.lock().unwrap();
+        if app.state::<crate::Runtime>().detector_generation.load(std::sync::atomic::Ordering::SeqCst) != generation { return; }
         if let Some(hub) = guard.as_mut() {
-            match hub.disable_metric(WORKOUT_METRIC) {
-                Ok(()) => {
-                    drop(guard);
-                    queue_event("detector_stopped", serde_json::json!({}));
-                }
-                Err(err) => eprintln!("hub: disable_metric failed: {err}"),
+            if let Err(err) = hub.disable_metric(WORKOUT_METRIC) {
+                eprintln!("hub: disable_metric failed: {err}");
+            } else {
+                drop(guard);
+                queue_event("detector_stopped", serde_json::json!({}));
             }
         }
     });
+}
+
+pub(crate) fn disable_metric_now(app: &AppHandle) {
+    app.state::<crate::Runtime>().detector_generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    DETECTOR_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    let state = app.state::<SharedHub>();
+    if let Some(hub) = state.lock().unwrap().as_mut() { let _ = hub.disable_metric(WORKOUT_METRIC); };
 }
 
 /// Honor-mode completion: the camera path failed, the user pressed Done.
@@ -632,6 +731,7 @@ mod tests {
         );
         assert!(config["exercise"]["downBelow"].is_number());
         assert_eq!(config["targetReps"], 12);
+        assert_eq!(config["movementId"], "squat");
         assert_eq!(config["camera"]["source"], "index");
         assert_eq!(config["camera"]["id"], "webcam");
         // The rig is mounted 180°; frames must be rotated to match the tuned
@@ -731,7 +831,18 @@ mod tests {
     #[test]
     fn unknown_exercise_yields_none() {
         let specs = load_exercise_specs().unwrap();
-        assert!(metric_config_for(&specs, "wallsit", 5, 0.0).is_none());
+        assert!(metric_config_for(&specs, "wallsit", 0, 30.0).is_none());
+    }
+
+    #[test]
+    fn custom_repetition_movement_requires_an_active_hub_version() {
+        let specs = load_exercise_specs().unwrap();
+        let (plugin, config) = metric_config_for(&specs, "my-curl", 8, 0.0).unwrap();
+        assert_eq!(plugin, "reps_vision");
+        assert_eq!(config["movementId"], "my-curl");
+        assert_eq!(config["targetReps"], 8);
+        assert!(config.get("exercise").is_none());
+        assert!(metric_config_for(&specs, "", 8, 0.0).is_none());
     }
 
     #[test]
@@ -798,4 +909,18 @@ mod tests {
         assert_eq!(payload["exercise"], "squat");
         assert_eq!(payload["targetReps"], 10);
     }
+}
+
+
+/// Wait for startup/enable operations, release capture, then drop our supervisor.
+pub(crate) fn stop(app: &AppHandle) {
+    PUBLICATIONS_ENABLED.store(false, std::sync::atomic::Ordering::SeqCst);
+    DETECTOR_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    app.state::<crate::Runtime>().detector_generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    *SESSION_ID.lock().unwrap() = None;
+    let state = app.state::<SharedHub>();
+    if let Some(mut hub) = state.lock().unwrap().take() {
+        let _ = hub.disable_metric(WORKOUT_METRIC);
+        drop(hub);
+    };
 }

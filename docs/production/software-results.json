@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-15T08:13:03.797Z",
+  "evidence": "software-only",
+  "productionQualified": false,
+  "host": {
+    "platform": "linux",
+    "release": "6.17.0-40-generic",
+    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz",
+    "node": "v22.22.3"
+  },
+  "sources": {
+    "reps": {
+      "commit": "1358672666b7fab7c0e76c90c3fc19e75aa0271f",
+      "dirty": true,
+      "status": "M .gitignore\n M README.md\n M app/src-tauri/Cargo.lock\n M app/src-tauri/Cargo.toml\n M app/src-tauri/engine/src/plan.rs\n M app/src-tauri/hub-client/Cargo.toml\n M app/src-tauri/hub-client/src/lib.rs\n M app/src-tauri/hub-client/src/supervisor.rs\n M app/src-tauri/hub-client/tests/client.rs\n M app/src-tauri/hub-client/tests/contract.rs\n M app/src-tauri/resources/exercise_specs.json\n M app/src-tauri/resources/hub-manifest.json\n M app/src-tauri/src/hub.rs\n M app/src-tauri/src/lib.rs\n M app/src-tauri/src/main.rs\n M app/src-tauri/tauri.conf.json\n M scripts/bundle-hub.sh\n M scripts/e2e-latency.mjs\n M vision/scripts/fetch_fixtures.py\n M vision/src/reps_vision/hub_plugin/plugin.py\n M vision/src/reps_vision/hub_plugin/stream_loop.py\n M vision/src/reps_vision/pose.py\n M vision/src/reps_vision/stream.py\n M vision/src/reps_vision/video.py\n M vision/tests/test_hub_plugin.py\n M vision/tests/test_stream.py\n M vision/tests/test_video.py\n?? .github/\n?? app/src-tauri/hub-client/src/outbox.rs\n?? docs/production/\n?? scripts/boot-hub.mjs\n?? scripts/capture-studio.sh\n?? scripts/qualify-software.mjs\n?? vision/scripts/benchmark_movements.py\n?? vision/src/reps_vision/movement.py\n?? vision/src/reps_vision/movement_templates.json\n?? vision/tests/fixtures/videos/benchmark.json\n?? vision/tests/test_benchmark.py\n?? vision/tests/test_movement.py\n?? vision/tests/test_pose_timing.py\n?? vision/uv.lock",
+      "workingTreeSha256": "ef36e4e70d5bee3572889dbe233c4ac72a6a8bc210b15629de248c0d6808c2bb",
+      "diffSha256": "027040d0dde082ed717a56a153ec3cf4c9356caf12ef7cff92e63dd08c90eef1"
+    },
+    "hub": {
+      "commit": "62c50873df0da701fa51e0b3fdbd1c826c35b780",
+      "dirty": true,
+      "status": "M README.md\n M apps/hubd/public/index.html\n M apps/hubd/src/actions.ts\n M apps/hubd/src/authoring/llm.ts\n M apps/hubd/src/clientApi.ts\n M apps/hubd/src/events.ts\n M apps/hubd/src/index.ts\n M apps/hubd/src/mcp/authoring.ts\n M apps/hubd/src/mcp/runtime.ts\n M apps/hubd/src/metrics.ts\n M apps/hubd/src/replay.ts\n M apps/hubd/src/server.ts\n M apps/hubd/src/store.ts\n M apps/hubd/test/actions.test.ts\n M apps/hubd/test/authoringSurfaces.test.ts\n M apps/hubd/test/clientApi.test.ts\n M apps/hubd/test/contract.test.ts\n M apps/hubd/test/events.test.ts\n M apps/hubd/test/mcp.test.ts\n M apps/hubd/test/metrics.test.ts\n M apps/hubd/test/replay.test.ts\n?? .github/\n?? apps/hubd/public/studio.css\n?? apps/hubd/public/studio.html\n?? apps/hubd/public/studio.js\n?? apps/hubd/src/deliveries.ts\n?? apps/hubd/src/hostArgs.ts\n?? apps/hubd/src/movements.ts\n?? apps/hubd/src/productionApi.ts\n?? apps/hubd/src/sqlite.ts\n?? apps/hubd/test/contracts/v1.5/\n?? apps/hubd/test/deliveries.test.ts\n?? apps/hubd/test/hostArgs.test.ts\n?? apps/hubd/test/movementFixture.ts\n?? apps/hubd/test/movements.test.ts\n?? apps/hubd/test/productionApi.test.ts\n?? apps/hubd/test/qualification.test.ts\n?? docs/production/\n?? scripts/agent-event-consumer.mjs",
+      "workingTreeSha256": "039c4f9ddb0ab702e8caefd95ccedec49a04cc88f36685f792c7c43214a790d5",
+      "diffSha256": "98937cf09127f3f53abde659a94afb38137878203b97114b26bb46650448fa2b"
+    }
+  },
+  "artifacts": {
+    "manifestSha256": "04b6bd5190417546c6d3370467fb8fb65f8f4789df3ce5345004bf8142233c54",
+    "hubBundleSha256": "2bc1e1a26e124e6974889b1087f5cb7365fdde17e4a181440cd02e91bcc666ef",
+    "modelSha256": "5134a3aad27a58b93da0088d431f366da362b44e3ccfbe3462b3827a839011b1"
+  },
+  "checks": [
+    {
+      "name": "hub-types",
+      "status": "passed",
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 4904,
+      "log": "hub-types.log"
+    },
+    {
+      "name": "hub-tests",
+      "status": "passed",
+      "command": [
+        "pnpm",
+        "test"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 24043,
+      "log": "hub-tests.log"
+    },
+    {
+      "name": "hub-python",
+      "status": "passed",
+      "command": [
+        "uv",
+        "run",
+        "--frozen",
+        "python",
+        "-m",
+        "pytest"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 2566,
+      "log": "hub-python.log"
+    },
+    {
+      "name": "detector",
+      "status": "passed",
+      "command": [
+        "uv",
+        "run",
+        "--frozen",
+        "--extra",
+        "cv",
+        "python",
+        "-m",
+        "pytest"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 656,
+      "log": "detector.log"
+    },
+    {
+      "name": "desktop-tests",
+      "status": "passed",
+      "command": [
+        "pnpm",
+        "test"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 2257,
+      "log": "desktop-tests.log"
+    },
+    {
+      "name": "desktop-types",
+      "status": "passed",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsc",
+        "--noEmit"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 1636,
+      "log": "desktop-types.log"
+    },
+    {
+      "name": "desktop-rust",
+      "status": "passed",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--locked",
+        "--offline"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 9952,
+      "log": "desktop-rust.log"
+    },
+    {
+      "name": "public-video",
+      "status": "passed",
+      "command": [
+        "uv",
+        "run",
+        "--frozen",
+        "--extra",
+        "cv",
+        "python",
+        "scripts/benchmark_movements.py",
+        "--output",
+        "/tmp/reps-software-verified/public-video.json"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 121358,
+      "log": "public-video.log"
+    },
+    {
+      "name": "bundle",
+      "status": "passed",
+      "command": [
+        "node",
+        "scripts/e2e-latency.mjs",
+        "--bundle",
+        "--movement-contract",
+        "--parent-exit",
+        "--offline",
+        "--python-env",
+        "/tmp/fieldlab-installed-python"
+      ],
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 8180,
+      "log": "bundle.log"
+    }
+  ],
+  "pendingReleaseGates": [
+    "Actual gym calibration and held-out evidence for squat, push-up and curl",
+    "Target-machine rep-to-display p95 below 300 ms",
+    "Physical camera interruption and emergency escape",
+    "Intended orchestrator effects and destination-specific deduplication",
+    "Installed desktop UI restart while hub is offline",
+    "Physical full-volume behavior (automated checks use real SQLITE_FULL page limits)",
+    "Activation during a physical workout and rollback",
+    "Installed offline workout and eight-hour soak",
+    "Consented account-specific cloud authoring",
+    "Hosted CI execution and backups/capacity monitoring"
+  ],
+  "finishedAt": "2026-09-15T08:15:59.592Z",
+  "passed": true,
+  "challengeFailures": [
+    "curl-camera-cuts"
+  ],
+  "optionalChecks": {
+    "publicVideo": "requested",
+    "bundle": "requested"
+  }
+}

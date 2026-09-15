@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "evidence": "public-video-regression",
+  "productionQualified": false,
+  "clips": [
+    {
+      "id": "interval_pushups",
+      "file": "interval_pushups.webm",
+      "sha256": "e93ea83a78d47c27972f245a61d114118793598cfd059c318e120c453fd40bbe",
+      "exercise": "pushup",
+      "frames": 1543,
+      "expectedReps": 6,
+      "detectedReps": 6,
+      "completionTimesMs": [
+        8233.0,
+        16400.0,
+        24433.0,
+        32833.0,
+        40600.0,
+        48533.0
+      ],
+      "passed": true,
+      "truePositives": 6,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "required": true,
+      "reasons": {
+        "holding_phase": 39,
+        "ready": 1,
+        "incomplete_range": 1491,
+        "phase_completed": 6,
+        "rep_completed": 6
+      },
+      "processingP95Ms": 26.912195993645582,
+      "configSha256": "449ddc877ec013aa93469890f6ac40960fd061b9c410c9f4aea35eebfe003795"
+    },
+    {
+      "id": "squat_demo",
+      "file": "squat_demo.webm",
+      "sha256": "2440985661c3533a4ce78472b0f4577dbdf023aff3f8f9a225bbb5ff8071b1e9",
+      "exercise": "squat",
+      "frames": 213,
+      "expectedReps": 2,
+      "detectedReps": 2,
+      "completionTimesMs": [
+        3533.0,
+        6567.0
+      ],
+      "passed": true,
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "required": true,
+      "reasons": {
+        "missing_starting_pose": 5,
+        "holding_phase": 15,
+        "ready": 1,
+        "incomplete_range": 188,
+        "phase_completed": 2,
+        "rep_completed": 2
+      },
+      "processingP95Ms": 87.90116100135492,
+      "configSha256": "cfed68f322cc5bb894fb527681651df818e8c696ed970f9763a9974eac2094ab"
+    },
+    {
+      "id": "kb_racked_squats_side",
+      "file": "kb_racked_squats_side.webm",
+      "sha256": "5e0ded0810d73db0acfb3bbdf71a181e512607db16c1fde8d2ed30bb18ca840d",
+      "exercise": "squat",
+      "frames": 1524,
+      "expectedReps": 6,
+      "detectedReps": 6,
+      "completionTimesMs": [
+        7000.0,
+        14333.0,
+        22600.0,
+        30433.0,
+        38900.0,
+        46733.00000000001
+      ],
+      "passed": true,
+      "truePositives": 6,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "required": true,
+      "reasons": {
+        "holding_phase": 43,
+        "ready": 1,
+        "incomplete_range": 1468,
+        "phase_completed": 6,
+        "rep_completed": 6
+      },
+      "processingP95Ms": 96.00468599819578,
+      "configSha256": "cfed68f322cc5bb894fb527681651df818e8c696ed970f9763a9974eac2094ab"
+    },
+    {
+      "id": "curl-steady-camera",
+      "file": "ez_bar_curl.webm",
+      "sha256": "a8c89f5a9d41b8e459892cb149c0a90ff2694165aabdba9b6e801175eb2d5e27",
+      "exercise": "curl",
+      "frames": 156,
+      "expectedReps": 2,
+      "detectedReps": 2,
+      "completionTimesMs": [
+        46880.0,
+        49283.0
+      ],
+      "passed": true,
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "required": true,
+      "reasons": {
+        "holding_phase": 15,
+        "ready": 1,
+        "incomplete_range": 134,
+        "phase_completed": 2,
+        "rep_completed": 2,
+        "insufficient_visibility": 2
+      },
+      "processingP95Ms": 27.874246996361762,
+      "configSha256": "5867dcaf811a13c201567faa1ce0fe2252f7741d833d41ae281952e81ac209fc"
+    },
+    {
+      "id": "curl-camera-cuts",
+      "file": "ez_bar_curl.webm",
+      "sha256": "a8c89f5a9d41b8e459892cb149c0a90ff2694165aabdba9b6e801175eb2d5e27",
+      "exercise": "curl",
+      "frames": 600,
+      "expectedReps": 9,
+      "detectedReps": 4,
+      "completionTimesMs": [
+        46980.00000000001,
+        49416.00000000001,
+        60126.00000000001,
+        62229.0
+      ],
+      "passed": false,
+      "truePositives": 4,
+      "falsePositives": 0,
+      "falseNegatives": 5,
+      "required": false,
+      "reasons": {
+        "holding_phase": 43,
+        "ready": 5,
+        "incomplete_range": 332,
+        "phase_completed": 5,
+        "insufficient_visibility": 170,
+        "missing_starting_pose": 41,
+        "rep_completed": 4
+      },
+      "processingP95Ms": 32.682649994967505,
+      "configSha256": "5867dcaf811a13c201567faa1ce0fe2252f7741d833d41ae281952e81ac209fc"
+    },
+    {
+      "id": "squat-standing-negative",
+      "file": "kb_racked_squats_side.webm",
+      "sha256": "5e0ded0810d73db0acfb3bbdf71a181e512607db16c1fde8d2ed30bb18ca840d",
+      "exercise": "squat",
+      "frames": 90,
+      "expectedReps": 0,
+      "detectedReps": 0,
+      "completionTimesMs": [],
+      "passed": true,
+      "truePositives": 0,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "required": true,
+      "reasons": {
+        "holding_phase": 3,
+        "ready": 1,
+        "incomplete_range": 86
+      },
+      "processingP95Ms": 29.486610997992102,
+      "configSha256": "cfed68f322cc5bb894fb527681651df818e8c696ed970f9763a9974eac2094ab"
+    }
+  ],
+  "modelSha256": "5134a3aad27a58b93da0088d431f366da362b44e3ccfbe3462b3827a839011b1",
+  "passed": true,
+  "challengeFailures": [
+    "curl-camera-cuts"
+  ]
+}

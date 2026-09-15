@@ -56,10 +56,10 @@ function WeightEntry({ initial }: { initial: number }) {
   );
 }
 
-function PrimaryStatus({ snapshot, fallback }: { snapshot: Snapshot; fallback: boolean }) {
+function PrimaryStatus({ snapshot, fallback, debug }: { snapshot: Snapshot; fallback: boolean; debug: boolean }) {
   switch (snapshot.phase) {
     case "CODING":
-      return <span className="small">Next workout in {mmss(snapshot.remainingSeconds)}</span>;
+      return <span className="small">{debug ? "Idle · start a test when you’re ready" : `Next workout in ${mmss(snapshot.remainingSeconds)}`}</span>;
     case "WEIGHT_CONFIRMATION":
       return <WeightEntry key={snapshot.prescription?.exercise} initial={snapshot.prescription?.defaultWeight ?? 0} />;
     default: {
@@ -74,17 +74,17 @@ function PrimaryStatus({ snapshot, fallback }: { snapshot: Snapshot; fallback: b
             {label} · {Math.floor(snapshot.progress?.value ?? 0)} / {target} {reps ? "reps" : "sec"}
           </span>
           <div className="lockrow">
-            <Padlock />
+            {!debug && <Padlock />}
             <span className="big">{debt ?? "!"}</span>
           </div>
-          <span className="small">{fallback ? "Camera down · press H for honor mode" : "Workout debt remaining"}</span>
+          <span className="small">{fallback ? "Camera down · press H for honor mode" : debug ? "Test progress · not saved to your workouts" : "Workout debt remaining"}</span>
         </>
       );
     }
   }
 }
 
-function GymStatus({ snapshot }: { snapshot: Snapshot }) {
+function GymStatus({ snapshot, debug }: { snapshot: Snapshot; debug: boolean }) {
   const rx = snapshot.prescription;
   const label = snapshot.day?.items.find((i) => i.name === rx?.exercise)?.label ?? rx?.exercise ?? "";
   const reps = rx?.kind === "REP";
@@ -93,7 +93,7 @@ function GymStatus({ snapshot }: { snapshot: Snapshot }) {
   const pad3 = (n: number) => String(Math.floor(n)).padStart(3, "0");
   switch (snapshot.phase) {
     case "CODING":
-      return <span className="small">Next workout in {mmss(snapshot.remainingSeconds)}</span>;
+      return <span className="small">{debug ? "Idle · start a test when you’re ready" : `Next workout in ${mmss(snapshot.remainingSeconds)}`}</span>;
     case "WEIGHT_CONFIRMATION":
       return (
         <>
@@ -117,7 +117,7 @@ function GymStatus({ snapshot }: { snapshot: Snapshot }) {
   }
 }
 
-export function Screen({ snapshot, variant }: { snapshot: Snapshot; variant: Variant }) {
+export function Screen({ snapshot, variant, debug = false }: { snapshot: Snapshot; variant: Variant; debug?: boolean }) {
   const coding = snapshot.phase === "CODING";
   const mode = coding ? "code" : "workout";
   const [fallback, setFallback] = useState(false);
@@ -145,7 +145,7 @@ export function Screen({ snapshot, variant }: { snapshot: Snapshot; variant: Var
     // Escape hatch (spec §14): hold Ctrl+Shift+Backspace for 3s. Honor mode: H.
     const down = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === "Backspace" && !hold.current) {
-        hold.current = setTimeout(() => void invoke("debug_mode", { mode: "coding" }), ESCAPE_HOLD_MS);
+        hold.current = setTimeout(() => void invoke("emergency_escape"), ESCAPE_HOLD_MS);
       } else if (e.key.toLowerCase() === "h" && fallbackRef.current) {
         void invoke("honor_complete");
       }
@@ -159,6 +159,7 @@ export function Screen({ snapshot, variant }: { snapshot: Snapshot; variant: Var
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     return () => {
+      if (hold.current) clearTimeout(hold.current);
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
       void unlisten.then((u) => u());
@@ -173,7 +174,7 @@ export function Screen({ snapshot, variant }: { snapshot: Snapshot; variant: Var
           <circle cx="50" cy="50" r="44" fill="var(--go)" stroke="var(--ink)" strokeWidth="6" />
           <path d="M28 52 L44 68 L74 36" fill="none" stroke="var(--ivory)" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <h1 className="title">LOGGED</h1>
+        <h1 className="title">{debug ? "TEST COMPLETE" : "LOGGED"}</h1>
       </div>
     );
   }
@@ -192,10 +193,10 @@ export function Screen({ snapshot, variant }: { snapshot: Snapshot; variant: Var
           e.currentTarget.src = `/art/scene-${mode}.png`;
         }}
       />
-      <h1 className="title">{coding ? "CODE" : "WORKOUT"}</h1>
+      <h1 className="title">{debug ? (coding ? "DEBUG" : "TEST WORKOUT") : (coding ? "CODE" : "WORKOUT")}</h1>
       <div className="character" />
       <div className="status">
-        {variant === "gym" ? <GymStatus snapshot={snapshot} /> : <PrimaryStatus snapshot={snapshot} fallback={fallback} />}
+        {variant === "gym" ? <GymStatus snapshot={snapshot} debug={debug} /> : <PrimaryStatus snapshot={snapshot} fallback={fallback} debug={debug} />}
       </div>
     </div>
   );

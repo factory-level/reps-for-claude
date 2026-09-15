@@ -1,0 +1,116 @@
+{
+  "squat": {
+    "schemaVersion": 1,
+    "features": {
+      "angle": [
+        "hip",
+        "knee",
+        "ankle"
+      ]
+    },
+    "phases": [
+      {
+        "name": "start",
+        "conditions": [
+          {
+            "feature": "angle",
+            "min": 160
+          }
+        ],
+        "minDwellMs": 80
+      },
+      {
+        "name": "flexed",
+        "conditions": [
+          {
+            "feature": "angle",
+            "max": 110
+          }
+        ],
+        "minDwellMs": 80
+      }
+    ],
+    "minVisibility": 0.65,
+    "smoothingMs": 60,
+    "trackingLossMs": 500,
+    "minCycleMs": 350,
+    "maxCycleMs": 15000,
+    "side": "auto"
+  },
+  "pushup": {
+    "schemaVersion": 1,
+    "features": {
+      "angle": [
+        "shoulder",
+        "elbow",
+        "wrist"
+      ]
+    },
+    "phases": [
+      {
+        "name": "start",
+        "conditions": [
+          {
+            "feature": "angle",
+            "min": 150
+          }
+        ],
+        "minDwellMs": 80
+      },
+      {
+        "name": "flexed",
+        "conditions": [
+          {
+            "feature": "angle",
+            "max": 95
+          }
+        ],
+        "minDwellMs": 80
+      }
+    ],
+    "minVisibility": 0.65,
+    "smoothingMs": 60,
+    "trackingLossMs": 500,
+    "minCycleMs": 350,
+    "maxCycleMs": 15000,
+    "side": "auto"
+  },
+  "curl": {
+    "schemaVersion": 1,
+    "features": {
+      "angle": [
+        "shoulder",
+        "elbow",
+        "wrist"
+      ]
+    },
+    "phases": [
+      {
+        "name": "start",
+        "conditions": [
+          {
+            "feature": "angle",
+            "min": 150
+          }
+        ],
+        "minDwellMs": 80
+      },
+      {
+        "name": "flexed",
+        "conditions": [
+          {
+            "feature": "angle",
+            "max": 60
+          }
+        ],
+        "minDwellMs": 80
+      }
+    ],
+    "minVisibility": 0.65,
+    "smoothingMs": 60,
+    "trackingLossMs": 500,
+    "minCycleMs": 350,
+    "maxCycleMs": 15000,
+    "side": "auto"
+  }
+}

@@ -82,6 +82,10 @@ impl DailyPlan {
         let r: RoutineFile = serde_json::from_str(json).map_err(|e| format!("routine.json: {e}"))?;
         let mut items = Vec::new();
         for l in r.lifts {
+            if l.exercise.trim().is_empty() || l.sets == 0 || l.reps == 0 ||
+                l.weight.is_some_and(|w| !w.is_finite() || w < 0.0) {
+                return Err("routine.json: lifts require an exercise, positive sets/reps, and nonnegative weight".into());
+            }
             items.push(PlanItem {
                 label: l.label.clone().unwrap_or_else(|| l.exercise.clone()),
                 exercise: l.exercise,
@@ -95,6 +99,9 @@ impl DailyPlan {
             });
         }
         for c in r.conditioning {
+            if c.exercise.trim().is_empty() || c.rounds == 0 || !c.seconds.is_finite() || c.seconds <= 0.0 {
+                return Err("routine.json: conditioning requires an exercise, positive rounds and seconds".into());
+            }
             items.push(PlanItem {
                 label: c.label.clone().unwrap_or_else(|| c.exercise.clone()),
                 ui_kind: if c.exercise == "jumprope" { "jumprope".into() } else { "lift".into() },
@@ -108,6 +115,9 @@ impl DailyPlan {
             });
         }
         for s in r.stretches {
+            if !s.seconds.is_finite() || s.seconds <= 0.0 {
+                return Err("routine.json: stretches require positive seconds".into());
+            }
             // Every stretch is detected by the generic "stretch" timed hold; the
             // routine name is just the label. perSide → two holds.
             items.push(PlanItem {
@@ -292,6 +302,20 @@ mod tests {
         };
         plan.restore("d", &state);
         assert_eq!(plan.to_day_plan().sets_done, 1);
+    }
+
+    #[test]
+    fn invalid_routine_targets_cannot_create_an_automatic_completion() {
+        for json in [
+            r#"{"lifts":[{"exercise":"custom","sets":1,"reps":0}]}"#,
+            r#"{"lifts":[{"exercise":"custom","sets":0,"reps":5}]}"#,
+            r#"{"lifts":[{"exercise":"","sets":1,"reps":5}]}"#,
+            r#"{"lifts":[{"exercise":"custom","sets":1,"reps":5,"weight":-1}]}"#,
+            r#"{"conditioning":[{"exercise":"jumprope","seconds":0}]}"#,
+            r#"{"stretches":[{"seconds":-1}]}"#,
+        ] {
+            assert!(DailyPlan::from_routine_json(json, "today").is_err(), "{json}");
+        }
     }
 }
 

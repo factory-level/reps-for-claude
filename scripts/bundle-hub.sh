@@ -7,15 +7,16 @@
 #     hubd.mjs          single-file hubd (node >= 22.5 — node:sqlite)
 #     public/           snapshot tuning app assets
 #     vision/           vision-host sources + pyproject + uv.lock (frame_stats included)
-# The reps plugin is NOT staged here — it ships with this repo at
-# vision/src and is loaded via HUB_PLUGIN_ARGS. Python env is provisioned
-# at first run by uv (network required once).
+# The reps plugin is staged alongside hub-bundle in resources/reps-vision,
+# and loaded via HUB_PLUGIN_ARGS. Python env is provisioned at first run
+# by uv (network required once).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HUB_DIR="${HUB_DIR:-$REPO_ROOT/../usb-mcp-hub}"
 OUT="$REPO_ROOT/app/src-tauri/resources/hub-bundle"
-API_VERSION="1.4"
+API_VERSION="$(sed -n 's/^export const API_VERSION = "\([^"]*\)";.*/\1/p' "$HUB_DIR/apps/hubd/src/clientApi.ts")"
+[[ -n "$API_VERSION" ]] || { echo "cannot read hub API version" >&2; exit 1; }
 
 if [[ ! -d "$HUB_DIR" ]]; then
   echo "usb-mcp-hub checkout not found at $HUB_DIR (set HUB_DIR)" >&2
@@ -23,8 +24,10 @@ if [[ ! -d "$HUB_DIR" ]]; then
 fi
 
 HUB_COMMIT="$(git -C "$HUB_DIR" rev-parse HEAD)"
+HUB_DIRTY=false
 if [[ -n "$(git -C "$HUB_DIR" status --porcelain)" ]]; then
-  echo "warning: $HUB_DIR has uncommitted changes; manifest pins $HUB_COMMIT anyway" >&2
+  HUB_DIRTY=true
+  echo "warning: staging a development bundle with uncommitted hub changes" >&2
 fi
 
 echo "building hubd bundle from $HUB_DIR @ ${HUB_COMMIT:0:12}"
@@ -33,6 +36,18 @@ echo "building hubd bundle from $HUB_DIR @ ${HUB_COMMIT:0:12}"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$HUB_DIR/apps/hubd/dist/hubd.mjs" "$OUT/hubd.mjs"
+cp "$REPO_ROOT/scripts/boot-hub.mjs" "$REPO_ROOT/app/src-tauri/resources/boot-hub.mjs"
+rm -rf "$REPO_ROOT/app/src-tauri/resources/reps-vision"
+mkdir -p "$REPO_ROOT/app/src-tauri/resources/reps-vision"
+cp -r "$REPO_ROOT/vision/src/reps_vision" "$REPO_ROOT/app/src-tauri/resources/reps-vision/"
+find "$REPO_ROOT/app/src-tauri/resources/reps-vision" -name __pycache__ -type d -exec rm -rf {} +
+rm -rf "$REPO_ROOT/app/src-tauri/resources/models"
+mkdir -p "$REPO_ROOT/app/src-tauri/resources/models"
+MODEL_PATH="$(cd "$REPO_ROOT/vision" && PYTHONPATH=src .venv/bin/python -c 'from reps_vision.pose import ensure_model; print(ensure_model())')"
+cp "$MODEL_PATH" "$REPO_ROOT/app/src-tauri/resources/models/pose_landmarker_full.task"
+mkdir -p "$REPO_ROOT/app/src-tauri/resources/debug-videos"
+cp "$REPO_ROOT/vision/tests/fixtures/videos/squat_demo.webm" "$REPO_ROOT/app/src-tauri/resources/debug-videos/"
+cp "$REPO_ROOT/docs/production/debug-video-attribution.txt" "$REPO_ROOT/app/src-tauri/resources/debug-videos/ATTRIBUTION.txt"
 cp -r "$HUB_DIR/apps/hubd/public" "$OUT/public"
 mkdir -p "$OUT/vision"
 cp -r "$HUB_DIR/vision/host" "$OUT/vision/host"
@@ -56,6 +71,7 @@ manifest="$REPO_ROOT/app/src-tauri/resources/hub-manifest.json"
 {
   echo "{"
   echo "  \"hubCommit\": \"$HUB_COMMIT\","
+  echo "  \"hubDirty\": $HUB_DIRTY,"
   echo "  \"apiVersion\": \"$API_VERSION\","
   echo "  \"nodeEngine\": \">=22.5\","
   echo "  \"artifactSha256s\": {"
@@ -82,6 +98,15 @@ manifest="$REPO_ROOT/app/src-tauri/resources/hub-manifest.json"
   echo "  }"
   echo "}"
 } > "$manifest"
+python3 - "$manifest" <<'PYHASH'
+import hashlib, json, pathlib, sys
+manifest = pathlib.Path(sys.argv[1])
+body = json.loads(manifest.read_text())
+root = manifest.parent
+files = [p for directory in ("reps-vision", "models", "companion", "debug-videos") for p in (root / directory).rglob("*") if p.is_file()]
+body["consumerSha256s"] = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
+manifest.write_text(json.dumps(body, indent=2) + "\n")
+PYHASH
 
 echo "staged $(find "$OUT" -type f | wc -l) files into $OUT"
 echo "manifest: $manifest (hub @ ${HUB_COMMIT:0:12}, api v$API_VERSION)"

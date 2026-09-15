@@ -1,0 +1,44 @@
+name: Quality
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  detector-and-interface:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm install --global pnpm@9.15.0
+      - run: pip install uv==0.11.27
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgl1 libegl1
+      - run: uv sync --frozen --extra cv
+        working-directory: vision
+      - run: uv run --frozen --extra cv python -m pytest
+        working-directory: vision
+      - run: uv run --frozen --extra cv python scripts/fetch_fixtures.py --benchmark
+        working-directory: vision
+      - run: uv run --frozen --extra cv python scripts/benchmark_movements.py --output ../qualification/public-video.json
+        working-directory: vision
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-video-regression
+          path: qualification/
+      # The app currently commits package-lock.json; use its existing lock.
+      - run: npm ci
+        working-directory: app
+      - run: pnpm test
+        working-directory: app
+      - run: pnpm exec tsc --noEmit
+        working-directory: app
+      - run: cargo test --workspace --locked
+        working-directory: app/src-tauri
+        env:
+          # Unit/contract tests do not package the separately staged hub SDK.
+          # The qualification runner verifies the real bundle locally.
+          TAURI_CONFIG: '{"bundle":{"resources":null}}'

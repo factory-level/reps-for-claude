@@ -40,7 +40,7 @@ class FakeEstimator:
         self._script = list(script)
         self.closed = False
 
-    def landmarks(self, frame):
+    def landmarks(self, frame, *, timestamp_ms=None):
         return self._script.pop(0) if self._script else None
 
     def close(self):

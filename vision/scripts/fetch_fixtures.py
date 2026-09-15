@@ -10,6 +10,10 @@ Usage: uv run python scripts/fetch_fixtures.py
 
 from __future__ import annotations
 
+import argparse
+import hashlib
+import os
+import tempfile
 import json
 import time
 import urllib.error
@@ -59,11 +63,22 @@ EXPECTATIONS = {
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--benchmark', action='store_true', help='Also download the reviewed temporal benchmark videos (including curls)')
+    args = parser.parse_args()
     FIXTURES.mkdir(parents=True, exist_ok=True)
+    benchmark = json.loads((FIXTURES / 'benchmark.json').read_text())['clips']
+    sources = {entry['file']: entry for entry in benchmark}
+    selected = {clip['file']: clip for clip in CLIPS}
+    if args.benchmark:
+        selected.update(sources)
     manifest = []
-    for clip in CLIPS:
+    for clip in selected.values():
         target = FIXTURES / clip["file"]
+        expected_hash = sources.get(clip['file'], {}).get('sha256')
         if target.exists():
+            if expected_hash and hashlib.sha256(target.read_bytes()).hexdigest() != expected_hash:
+                raise ValueError(f'Checksum mismatch: {target}; remove the damaged fixture and retry')
             print(f"already present: {clip['file']}")
         else:
             print(f"downloading {clip['file']} ...")
@@ -72,8 +87,23 @@ def main() -> None:
             )
             for attempt in range(5):
                 try:
-                    with urllib.request.urlopen(req) as resp:
-                        target.write_bytes(resp.read())
+                    fd, temporary = tempfile.mkstemp(dir=FIXTURES, suffix='.part')
+                    try:
+                        digest = hashlib.sha256()
+                        total = 0
+                        with os.fdopen(fd, 'wb') as output, urllib.request.urlopen(req, timeout=60) as resp:
+                            while chunk := resp.read(1024 * 1024):
+                                total += len(chunk)
+                                if total > 128 * 1024 * 1024:
+                                    raise ValueError('Fixture exceeds 128 MiB limit')
+                                digest.update(chunk)
+                                output.write(chunk)
+                        if expected_hash and digest.hexdigest() != expected_hash:
+                            raise ValueError(f'Download checksum mismatch: {target}')
+                        os.replace(temporary, target)
+                    finally:
+                        if os.path.exists(temporary):
+                            os.unlink(temporary)
                     break
                 except urllib.error.HTTPError as e:
                     if e.code != 429 or attempt == 4:
@@ -83,8 +113,9 @@ def main() -> None:
                     time.sleep(delay)
             print(f"  -> {target} ({target.stat().st_size / 1e6:.1f} MB)")
             time.sleep(5)  # be polite between downloads
-        entry = {**clip, **EXPECTATIONS[clip["file"]]}
-        manifest.append(entry)
+        if clip["file"] in EXPECTATIONS:
+            original = next(e for e in CLIPS if e["file"] == clip["file"])
+            manifest.append({**original, **EXPECTATIONS[clip["file"]]})
     (FIXTURES / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"manifest: {FIXTURES / 'manifest.json'}")
 

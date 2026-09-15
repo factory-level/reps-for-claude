@@ -177,7 +177,7 @@ def _run_jumprope(
             ok, frame = cap.read()
             if not ok:
                 break
-            landmarks = estimator.landmarks(frame)
+            landmarks = estimator.landmarks(frame, timestamp_ms=frame_idx * tick * 1000)
             progress = activity.update(landmarks, frame_idx * tick)
             value, satisfied = progress.value, progress.satisfied
             sink(

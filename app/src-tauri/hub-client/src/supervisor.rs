@@ -14,75 +14,36 @@ use crate::{
 
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 const RESTART_BACKOFF: Duration = Duration::from_millis(500);
-/// hubd's default primary listen port. The app never overrides it, so a stale
-/// process bound here at launch is always a leaked hub from a prior run
-/// (e.g. a `tauri dev` hot-reload that hard-killed the app before Drop ran).
-const HUB_PORT: u16 = 8443;
-
 /// True if something is currently listening on `127.0.0.1:port`.
 fn port_in_use(port: u16) -> bool {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
 }
 
-/// Before spawning our own hubd, free the hub port if a leaked hub still holds
-/// it — otherwise the new hubd dies on EADDRINUSE, never signals READY, and the
-/// app silently falls back to honor mode after the ready timeout. Only the
-/// process on the app's own hub port is signaled. No-op when the port is free.
-fn free_stale_hub_port(port: u16) {
-    if !port_in_use(port) {
-        return;
-    }
-    eprintln!("hub: port {port} already in use — clearing a leaked hub before starting");
+/// Kill only a child/process group that this supervisor created. Also close
+/// descendants if the direct child has already exited.
+fn terminate_owned_child(child: &mut Child) {
     #[cfg(unix)]
     {
-        // Signal the whole process GROUP of whatever holds the port, not just
-        // the listener: hubd is spawned as its own group (see pre_exec below),
-        // so its vision-host — the process actually holding the camera — dies
-        // with it. Killing hubd alone orphaned the host and the next lock
-        // failed with "cannot open camera".
-        let groups = stale_port_groups(port);
-        for pgid in &groups {
-            unsafe { libc::kill(-pgid, libc::SIGTERM) };
+        let group = -(child.id() as i32);
+        unsafe { libc::kill(group, libc::SIGTERM); }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if child.try_wait().ok().flatten().is_some() { break; }
+            std::thread::sleep(Duration::from_millis(50));
         }
-        for _ in 0..30 {
-            if !port_in_use(port) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        for pgid in &groups {
-            unsafe { libc::kill(-pgid, libc::SIGKILL) };
-        }
+        unsafe { libc::kill(group, libc::SIGKILL); }
     }
-    for _ in 0..30 {
-        if !port_in_use(port) {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    eprintln!("hub: warning — port {port} still in use after cleanup; hubd may fail to start");
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
-/// Process groups (other than our own) of the processes bound to `port`.
-#[cfg(unix)]
-fn stale_port_groups(port: u16) -> Vec<i32> {
-    let out = Command::new("fuser")
-        .arg(format!("{port}/tcp"))
-        .stderr(Stdio::null())
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default();
-    let mine = unsafe { libc::getpgrp() };
-    let mut groups: Vec<i32> = out
-        .split_whitespace()
-        .filter_map(|s| s.parse::<i32>().ok())
-        .map(|pid| unsafe { libc::getpgid(pid) })
-        .filter(|pgid| *pgid > 0 && *pgid != mine)
-        .collect();
-    groups.sort_unstable();
-    groups.dedup();
-    groups
+/// Covers every error between spawn and handing ownership to Active.
+struct StartingChild(Option<Child>);
+impl Drop for StartingChild {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() { terminate_owned_child(child); }
+    }
 }
 
 pub struct HubSupervisorConfig {
@@ -100,13 +61,20 @@ impl HubSupervisorConfig {
     /// `plugin_src` (the shipped reps_vision sources).
     pub fn bundled(resources_dir: &std::path::Path, plugin_src: &std::path::Path) -> Self {
         let bundle = resources_dir.join("hub-bundle");
+        let data_home = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share"));
+        let python_env = std::env::var("UV_PROJECT_ENVIRONMENT").unwrap_or_else(|_| data_home.join("reps-for-claude/vision-env").display().to_string());
         HubSupervisorConfig {
             hub_dir: bundle.clone(),
             command: vec![
                 "node".into(),
-                bundle.join("hubd.mjs").display().to_string(),
+                resources_dir.join("boot-hub.mjs").display().to_string(),
             ],
             env: vec![
+                ("UV_PROJECT_ENVIRONMENT".into(), python_env),
+                ("UV_FROZEN".into(), "1".into()),
+                ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
+                ("REPS_POSE_MODEL".into(), resources_dir.join("models").join("pose_landmarker_full.task").display().to_string()),
                 (
                     "HUB_VISION_DIR".into(),
                     bundle.join("vision").display().to_string(),
@@ -116,11 +84,9 @@ impl HubSupervisorConfig {
                     bundle.join("public").display().to_string(),
                 ),
                 (
-                    "HUB_PLUGIN_ARGS".into(),
-                    format!(
-                        "--plugin-path {} --plugin reps_vision.hub_plugin.plugin:RepsVisionPlugin",
-                        plugin_src.display()
-                    ),
+                    "HUB_PLUGIN_ARGS_JSON".into(),
+                    serde_json::json!(["--plugin-path", plugin_src.display().to_string(), "--plugin",
+                        "reps_vision.hub_plugin.plugin:RepsVisionPlugin"]).to_string(),
                 ),
                 // Companion screens staged beside the bundle (hubd ignores the
                 // env when the directory is absent).
@@ -149,11 +115,9 @@ impl HubSupervisorConfig {
             ],
             env: vec![
                 (
-                    "HUB_PLUGIN_ARGS".into(),
-                    format!(
-                        "--plugin-path {} --plugin reps_vision.hub_plugin.plugin:RepsVisionPlugin",
-                        plugin_path.display()
-                    ),
+                    "HUB_PLUGIN_ARGS_JSON".into(),
+                    serde_json::json!(["--plugin-path", plugin_path.display().to_string(), "--plugin",
+                        "reps_vision.hub_plugin.plugin:RepsVisionPlugin"]).to_string(),
                 ),
                 // Companion screens (Workout / Calibrate / History) ship with
                 // reps; hubd hosts them under /app/.
@@ -212,8 +176,15 @@ impl HubSupervisor {
         for (key, value) in &self.config.env {
             command.env(key, value);
         }
-        // Clear a leaked hub from a previous run so we don't die on EADDRINUSE.
-        free_stale_hub_port(HUB_PORT);
+        let configured_port = self.config.env.iter().rev().find(|(key, _)| key == "PORT")
+            .map(|(_, value)| value.clone()).or_else(|| std::env::var("PORT").ok())
+            .unwrap_or_else(|| "8443".into());
+        let port: u16 = configured_port.parse().map_err(|_| HubError::Api("invalid hub PORT".into()))?;
+        if port != 0 && port_in_use(port) {
+            return Err(HubError::Io(format!("hub port {port} is in use; refusing to terminate another process")));
+        }
+        // A pipe is an ownership signal: even an abrupt desktop exit closes it.
+        command.stdin(Stdio::piped()).env("HUB_EXIT_ON_STDIN_CLOSE", "1");
         // New process group so drop can signal hubd (and, via its own
         // shutdown handler, vision-host) without touching our group.
         #[cfg(unix)]
@@ -226,9 +197,9 @@ impl HubSupervisor {
                 });
             }
         }
-        let mut child = command.spawn().map_err(|e| HubError::Io(e.to_string()))?;
+        let mut child = StartingChild(Some(command.spawn().map_err(|e| HubError::Io(e.to_string()))?));
 
-        let stdout = child.stdout.take().ok_or_else(|| HubError::Io("no stdout".into()))?;
+        let stdout = child.0.as_mut().unwrap().stdout.take().ok_or_else(|| HubError::Io("no stdout".into()))?;
         let (ready_tx, ready_rx) = mpsc::channel();
         std::thread::Builder::new()
             .name("hubd-stdout".into())
@@ -269,7 +240,7 @@ impl HubSupervisor {
             })
             .map_err(|e| HubError::Io(e.to_string()))?;
 
-        *self.active.lock().unwrap() = Some(Active { child, client });
+        *self.active.lock().unwrap() = Some(Active { child: child.0.take().unwrap(), client });
         self.watch();
         Ok(())
     }
@@ -298,7 +269,11 @@ impl HubSupervisor {
                     let mut guard = active.lock().unwrap();
                     match guard.as_mut() {
                         None => return,
-                        Some(active_ref) => active_ref.child.try_wait().ok().flatten().is_some(),
+                        Some(active_ref) => {
+                            let exited = active_ref.child.try_wait().ok().flatten().is_some();
+                            if exited { terminate_owned_child(&mut active_ref.child); }
+                            exited
+                        }
                     }
                 };
                 if !exited {
@@ -354,22 +329,7 @@ impl HubSupervisor {
 
     fn kill_child(&self) {
         if let Some(active) = self.active.lock().unwrap().as_mut() {
-            #[cfg(unix)]
-            {
-                let pid = active.child.id() as i32;
-                unsafe {
-                    libc::kill(-pid, libc::SIGTERM);
-                }
-                let deadline = Instant::now() + Duration::from_secs(5);
-                while Instant::now() < deadline {
-                    if active.child.try_wait().ok().flatten().is_some() {
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-            }
-            let _ = active.child.kill();
-            let _ = active.child.wait();
+            terminate_owned_child(&mut active.child);
         }
     }
 
@@ -467,82 +427,45 @@ impl VisionHub for HubSupervisor {
 
 #[cfg(test)]
 mod port_tests {
-    use super::{free_stale_hub_port, port_in_use};
+    use super::*;
     use std::net::TcpListener;
 
     #[test]
-    fn port_in_use_tracks_a_live_listener() {
+    fn occupied_port_is_reported_without_terminating_its_owner() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
-        assert!(port_in_use(port), "a bound listener should read as in-use");
-        drop(listener);
-        // A sibling test spawning a child briefly duplicates this listener's fd
-        // until its exec, so give the kernel a moment to actually close it.
-        let freed = (0..50).any(|_| {
-            !port_in_use(port) || {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-                false
-            }
+        let dir = tempfile::tempdir().unwrap();
+        let result = HubSupervisor::start(HubSupervisorConfig {
+            hub_dir: dir.path().into(), command: vec!["must-not-execute".into()],
+            env: vec![("PORT".into(), port.to_string())],
         });
-        assert!(freed, "a released port should read as free");
+        assert!(matches!(result, Err(HubError::Io(message)) if message.contains("refusing to terminate")));
+        assert!(port_in_use(port));
     }
 
-    /// The leak that bit the rig: a hard-killed app leaves hubd AND its
-    /// vision-host behind; clearing the port must take the whole group.
     #[cfg(unix)]
     #[test]
-    fn free_stale_hub_port_kills_the_listeners_whole_group() {
-        use std::os::unix::process::CommandExt;
-        use std::process::{Command, Stdio};
-        let port = {
-            let l = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-            let p = l.local_addr().unwrap().port();
-            drop(l);
-            p
-        };
-        // "hubd" (python listener) with a "vision-host" sibling (sleep) in one group.
-        let script = format!(
-            "sleep 300 & python3 -c \"import socket,time; s=socket.socket(); s.bind(('127.0.0.1',{port})); s.listen(); time.sleep(300)\""
-        );
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(&script)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let pgid = child.id() as i32;
-        for _ in 0..50 {
-            if port_in_use(port) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        assert!(port_in_use(port), "fixture listener never came up");
-
-        free_stale_hub_port(port);
-
-        assert!(!port_in_use(port));
-        let _ = child.wait();
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        // Nothing left in the group — the "vision-host" sleep died too.
-        let survivors = Command::new("pgrep").arg("-g").arg(pgid.to_string()).output().unwrap();
-        assert!(
-            survivors.stdout.is_empty(),
-            "group {pgid} still has members: {}",
-            String::from_utf8_lossy(&survivors.stdout)
-        );
-    }
-
-    #[test]
-    fn free_stale_hub_port_is_a_noop_when_free() {
-        // Grab a port then release it so nothing is listening; the preflight
-        // must return immediately without trying to kill anything.
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        free_stale_hub_port(port); // no panic, no hang
-        assert!(!port_in_use(port));
+    fn failed_handshake_reaps_owned_child_and_its_camera_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let port_file = dir.path().join("port");
+        let script = r#"import socket, subprocess, sys, time
+s = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen()
+subprocess.Popen(['python3', '-c', 'import time; time.sleep(300)'], pass_fds=(s.fileno(),))
+with open(sys.argv[1], 'w') as f: f.write(str(s.getsockname()[1]))
+print('HUBD READY invalid-json', flush=True)
+time.sleep(300)
+"#;
+        let result = HubSupervisor::start(HubSupervisorConfig {
+            hub_dir: dir.path().into(),
+            command: vec!["python3".into(), "-u".into(), "-c".into(), script.into(), port_file.display().to_string()],
+            env: vec![("PORT".into(), "0".into())],
+        });
+        assert!(result.is_err());
+        let port = std::fs::read_to_string(port_file).unwrap().parse().unwrap();
+        let closed = (0..50).any(|_| {
+            if !port_in_use(port) { return true; }
+            std::thread::sleep(Duration::from_millis(20)); false
+        });
+        assert!(closed, "owned descendant retained its camera/listener after startup failed");
     }
 }
