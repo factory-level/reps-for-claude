@@ -22,6 +22,7 @@ pub const SUPPORTED_API_MAJOR: &str = "1";
 pub enum VisionEvent {
     /// Full landmark frame for the UI overlay (passed through untyped).
     Landmarks(serde_json::Value),
+    CameraFrame { camera_id: String, data: serde_json::Value },
     /// Live activity progress — maps 1:1 onto `engine::types::Progress`.
     Progress {
         value: f64,
@@ -43,6 +44,7 @@ pub enum VisionEvent {
 pub struct ProgressContext {
     pub metric_id: Option<String>,
     pub session_id: Option<String>,
+    pub consensus: Option<serde_json::Value>,
 }
 
 impl ProgressContext {
@@ -158,6 +160,7 @@ pub(crate) fn event_from_frame(frame: &serde_json::Value) -> Option<VisionEvent>
     let data = frame.get("data").cloned().unwrap_or(serde_json::Value::Null);
     match stream {
         "landmarks" => Some(VisionEvent::Landmarks(data)),
+        "frame" => Some(VisionEvent::CameraFrame { camera_id: frame.get("cameraId")?.as_str()?.to_string(), data }),
         "progress" => {
             let value = data.get("value")?.as_f64()?;
             let unit = data.get("unit")?.as_str()?;
@@ -169,6 +172,7 @@ pub(crate) fn event_from_frame(frame: &serde_json::Value) -> Option<VisionEvent>
                 unit: unit.to_string(),
                 satisfied: data.get("satisfied")?.as_bool()?,
                 context: ProgressContext {
+                    consensus: data.get("consensus").cloned(),
                     metric_id: frame.get("metricId").and_then(|v| v.as_str()).map(str::to_string),
                     session_id: data.get("sessionId").and_then(|v| v.as_str()).map(str::to_string),
                 },

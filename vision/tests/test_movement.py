@@ -143,3 +143,16 @@ def test_pinned_model_rejects_a_corrupted_local_override(tmp_path, monkeypatch):
     monkeypatch.setenv('REPS_POSE_MODEL', str(path))
     with pytest.raises(DetectorError, match='checksum mismatch'):
         ensure_model()
+
+
+def test_completed_cycle_exposes_ordered_capture_phase_evidence():
+    a = activity()
+    t = feed(a, 175, 0)
+    t = feed(a, 90, t, visibility=.8)
+    feed(a, 175, t)
+    evidence = a.completed_cycle
+    assert evidence['cycleId'] == '1'
+    assert [p['name'] for p in evidence['phases']] == ['start', 'flexed', 'start']
+    assert evidence['visibility'] == .8
+    times = [p['atMs'] for p in evidence['phases']]
+    assert all(b > a for a, b in zip(times, times[1:]))

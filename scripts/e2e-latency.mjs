@@ -51,7 +51,7 @@ const env = {
   PYTHONDONTWRITEBYTECODE: "1",
   HUB_BIND_HOST: "127.0.0.1",
   HUB_EXIT_ON_STDIN_CLOSE: "1",
-  PORT: "8446",
+  PORT: "0", // The fixture must not collide with a running local Hub.
   DEBUG_PORT: "8084",
   HUB_CERT_DIR: "/nonexistent-e2e",
 };

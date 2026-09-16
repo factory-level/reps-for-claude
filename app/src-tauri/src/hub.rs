@@ -15,6 +15,48 @@ pub const EXERCISE_SPECS: &str = include_str!("../resources/exercise_specs.json"
 pub const WORKOUT_METRIC: &str = "workout";
 pub const APP_ID: &str = "reps";
 
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CameraSettings {
+    pub consensus: bool,
+    pub usb_device: String,
+    #[serde(default = "default_usb_rotation")]
+    pub usb_rotation: u16,
+    pub phone_url: String,
+    pub phone_rotation: u16,
+}
+fn default_usb_rotation() -> u16 { 180 }
+fn phone_stream_url(value: &str) -> bool {
+    ["rtsp://", "rtsps://", "http://", "https://"].iter().any(|prefix| value.starts_with(prefix))
+}
+impl Default for CameraSettings {
+    fn default() -> Self { Self { consensus: false, usb_device: "/dev/video0".into(), usb_rotation: default_usb_rotation(), phone_url: String::new(), phone_rotation: 0 } }
+}
+#[tauri::command]
+pub fn get_camera_settings(app: AppHandle) -> Result<CameraSettings, String> {
+    let path = app.state::<crate::Runtime>().normal_home.join("cameras.json");
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(CameraSettings::default()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+#[tauri::command]
+pub fn save_camera_settings(app: AppHandle, settings: CameraSettings) -> Result<(), String> {
+    if !matches!(settings.usb_rotation, 0 | 90 | 180 | 270) || !matches!(settings.phone_rotation, 0 | 90 | 180 | 270) || !settings.usb_device.starts_with("/dev/video") {
+        return Err("Choose a /dev/video device and a valid rotation".into());
+    }
+    if settings.consensus && (!phone_stream_url(&settings.phone_url) || settings.phone_url.contains('@')) {
+        return Err("Enter an RTSP or HTTP MJPEG URL without embedded credentials".into());
+    }
+    let path = app.state::<crate::Runtime>().normal_home.join("cameras.json");
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    std::fs::write(&temporary, serde_json::to_vec(&settings).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(temporary, path).map_err(|e| e.to_string())
+}
+
 pub type SharedHub = Mutex<Option<Box<dyn VisionHub>>>;
 
 /// The FieldLab application manifest (API 1.4): every durable event and
@@ -406,9 +448,7 @@ pub fn enable_on_hub(
     let _ = hub.disable_metric(&request.metric_id);
     if let Some(set) = camera_set {
         for camera in &set.registry {
-            if let Err(err) = hub.add_camera(camera) {
-                eprintln!("hub: add_camera failed: {err}");
-            }
+            hub.add_camera(camera)?;
         }
     }
     hub.enable_metric(request)?;
@@ -524,11 +564,19 @@ fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
         match event {
             // Landmarks are terminal-only now: nothing in the webviews listens,
             // and pushing them at camera rate into both windows leaked memory.
+            VisionEvent::CameraFrame { camera_id, data } => {
+                if DETECTOR_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = app.emit("vision-camera", serde_json::json!({"cameraId": camera_id, "data": data}));
+                }
+            }
             VisionEvent::Landmarks(data) => print_detect(&data),
             VisionEvent::Progress { value, unit, satisfied, context } => {
                 if !DETECTOR_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) { continue; }
                 if !context.belongs_to(WORKOUT_METRIC, session_id().as_deref()) {
                     continue;
+                }
+                if let Some(status) = &context.consensus {
+                    let _ = app.emit("vision-consensus", status);
                 }
                 let core_state = app.state::<crate::SharedCore>();
                 let mut core = core_state.lock().unwrap();
@@ -585,7 +633,7 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
     let app = app.clone();
     std::thread::spawn(move || {
         if app.state::<crate::Runtime>().is_stopping() { return; }
-        let specs = match load_exercise_specs() {
+        let mut specs = match load_exercise_specs() {
             Ok(specs) => specs,
             Err(err) => {
                 eprintln!("hub: bad exercise specs: {err}");
@@ -607,6 +655,40 @@ pub fn enable_metric_async(app: &AppHandle, exercise: String, target_reps: u32, 
             return;
         };
 
+        match get_camera_settings(app.clone()) {
+            Ok(settings) if settings.consensus && config.get("movementId").is_some() => {
+                // Require an active version: legacy exercise fallback has no cycle evidence.
+                if let Some(object) = config.as_object_mut() { object.remove("exercise"); }
+                let phone_source = match std::env::var("REPS_PHONE_URL_FILE") {
+                    Ok(path) => match std::fs::read_to_string(path) {
+                        Ok(value) if phone_stream_url(value.trim()) => value.trim().to_string(),
+                        _ => { let _ = app.emit("vision-fallback", serde_json::json!({"reason": "Cannot read phone stream credentials file"})); return; }
+                    },
+                    Err(_) => settings.phone_url.clone(),
+                };
+                let calibration_path = app.state::<crate::Runtime>().normal_home.join("camera-calibration.json");
+                let calibration: serde_json::Value = std::fs::read(calibration_path).ok()
+                    .and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(serde_json::json!({}));
+                config["cameraCalibration"] = calibration;
+                specs["cameras"] = serde_json::json!({ "set": ["webcam", "phone"],
+                    "fusion": {"policy": "consensus", "quorum": 2},
+                    "registry": [
+                        {"cameraId": "webcam", "label": "USB webcam", "kind": "usb", "transport": "direct", "source": settings.usb_device, "rotate": settings.usb_rotation},
+                        {"cameraId": "phone", "label": "Android phone", "kind": "rtsp", "transport": "direct", "source": phone_source, "rotate": settings.phone_rotation}
+                    ] });
+            }
+            Ok(settings) => {
+                if app.state::<crate::Runtime>().normal_home.join("cameras.json").exists() {
+                    config["camera"]["source"] = serde_json::json!("uri");
+                    config["camera"]["value"] = serde_json::json!(settings.usb_device);
+                    config["camera"]["rotate"] = serde_json::json!(settings.usb_rotation);
+                }
+            },
+            Err(error) => {
+                let _ = app.emit("vision-fallback", serde_json::json!({"reason": error}));
+                return;
+            }
+        }
         config["appId"] = serde_json::json!(APP_ID);
         let camera_set = apply_camera_set(&specs, &mut config);
         let state = app.state::<SharedHub>();
