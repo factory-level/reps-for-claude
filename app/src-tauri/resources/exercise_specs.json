@@ -16,7 +16,7 @@
     },
     "incline_bench": {
       "activity": "lift",
-      "exercise": { "name": "incline_bench", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 150.0, "upAbove": 160.0, "minVisibility": 0.5 }
+      "exercise": { "name": "incline_bench", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 125.0, "upAbove": 160.0, "minVisibility": 0.5 }
     },
     "overhead": {
       "activity": "lift",
@@ -24,28 +24,28 @@
     },
     "curl": {
       "activity": "lift",
-      "exercise": { "name": "curl", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 135.0, "upAbove": 165.0, "minVisibility": 0.5 }
+      "exercise": { "name": "curl", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 110.0, "upAbove": 165.0, "minVisibility": 0.5 }
     },
     "pullup": {
       "activity": "lift",
-      "exercise": { "name": "pullup", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 140.0, "upAbove": 168.0, "minVisibility": 0.4 }
+      "exercise": { "name": "pullup", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 115.0, "upAbove": 168.0, "minVisibility": 0.4 }
     },
     "row": {
       "activity": "lift",
-      "exercise": { "name": "row", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 60.0, "upAbove": 85.0, "minVisibility": 0.4 }
+      "exercise": { "name": "row", "joints": ["shoulder", "elbow", "wrist"], "downBelow": 60.0, "upAbove": 105.0, "minVisibility": 0.4 }
     },
     "squat": {
       "activity": "lift",
-      "exercise": { "name": "squat", "joints": ["hip", "knee", "ankle"], "downBelow": 145.0, "upAbove": 165.0, "minVisibility": 0.5 }
+      "exercise": { "name": "squat", "joints": ["hip", "knee", "ankle"], "downBelow": 130.0, "upAbove": 165.0, "minVisibility": 0.5 }
     },
     "deadlift": {
       "activity": "lift",
-      "exercise": { "name": "deadlift", "joints": ["shoulder", "hip", "knee"], "downBelow": 145.0, "upAbove": 175.0, "minVisibility": 0.4 }
+      "exercise": { "name": "deadlift", "joints": ["shoulder", "hip", "knee"], "downBelow": 130.0, "upAbove": 175.0, "minVisibility": 0.4 }
     },
     "jumprope": {
       "activity": "jumprope",
       "targetSeconds": 60.0,
-      "bounceThreshold": 0.004,
+      "bounceThreshold": 0.008,
       "resetAfter": 2.0
     },
     "stretch": {

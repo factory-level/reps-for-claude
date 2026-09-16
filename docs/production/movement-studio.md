@@ -1,7 +1,7 @@
 # Movement Studio and production qualification
 
 The cross-repo target and release gates live in
-[FieldLab's design target](../../../usb-mcp-hub/docs/production/design-target.md).
+[FieldLab's design target](../../../usb-mcp-hub/docs/design/production-target.md).
 
 1. Start the app or hub with the `reps_vision` plugin. Open the hub's
    `/studio.html` page (the home page links to it). Pair first on the LAN listener.
