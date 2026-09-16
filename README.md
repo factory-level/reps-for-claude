@@ -13,11 +13,9 @@ flowchart LR
     Unlock --> Code
 ```
 
-**Full docs:** [`_docs/`](_docs/index.md) — plain-English pages with diagrams
-covering [the loop](_docs/concepts/the-loop.md),
-[weekly goals](_docs/concepts/weekly-goals.md),
-[rep detection](_docs/concepts/detection.md), and the
-[roadmap](_docs/about/roadmap.md).
+**Documentation:** [human guide](docs/wiki/index.md),
+[as-built architecture](docs/architecture/index.md), and [design](docs/design/index.md).
+See [detection and sensitivity](docs/wiki/concepts/detection.md) for the current presets.
 
 ## Status
 
