@@ -1,14 +1,14 @@
 {
-  "hubCommit": "fd1f23e32ac7a06680864a1081a309e8088ed80c",
+  "hubCommit": "1edb9cc8d51fb14826be1959324303a7238af8ad",
   "hubDirty": false,
   "apiVersion": "1.6",
   "nodeEngine": ">=22.5",
   "artifactSha256s": {
-    "hubd.mjs": "4b2bfe1fe908ba4fb2ab19a7ccdfef254fb9a55a31e28b393dba5cd9655b4539",
+    "hubd.mjs": "2d456443d4f31370f57a0ffe96e950a709a3af56886ff5b4ec8a1695c0f6f17c",
     "public/app.js": "8e4eb0da8f21fd8c400a85a1b21bcec40fead282739fac1ab1435ec28f4fcf7a",
     "public/debug-cameras.css": "881f43c8d875b619c1b1a39889563c9cb0ac7a4132e35ed59c8153d5df2e1d9e",
-    "public/debug-cameras.html": "f4ae8da6cab6a2d5a09a86cbaf7a45ff2811186be23ca7ebe5c2acbf233a22be",
-    "public/debug-cameras.js": "12d2b155fa1db82b9f18601a5e9b98138526d184fb28ceb7d3e6a58495b4fe16",
+    "public/debug-cameras.html": "e03480c97fdb7ae98b6463921f863a276e5975c929e111b69a7dce13014ab193",
+    "public/debug-cameras.js": "c2f47f7acd1142eef04e8b8e2c0605b37fe892dcaa89693afa176276deab0828",
     "public/index.html": "a729f749f2e79fc2f0a7a31e15ef529f887f0dab56a96ce0291d763df3d3c19b",
     "public/studio.css": "ae8d365021d6755abd5704f0bc3891f741537730f9de2d97d464a72da6c175ee",
     "public/studio.html": "16153700b681d3cd0edf00f64a081c4ea75bbe5f854dbc99ffbc260068e2a92c",
