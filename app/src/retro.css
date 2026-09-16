@@ -273,3 +273,15 @@ body {
 .app-content .debug-host { position: absolute; inset: 0; }
 .debug-toggle select { font: inherit; min-height: 36px; max-width: 230px; background: var(--ivory); color: var(--ink); }
 .debug-toggle label { align-self: center; }
+
+/* Camera setup stays compact on both desktop and phone-sized displays. */
+.camera-previews { display: flex; flex-wrap: wrap; gap: 1rem; }
+.camera-previews figure { margin: 0; max-width: 18rem; flex: 1 1 12rem; }
+.camera-previews img { width: 100%; height: auto; border-radius: .5rem; }
+.app-content details fieldset { display: grid; gap: .7rem; max-width: 36rem; }
+.app-content details label { display: grid; gap: .25rem; }
+.app-content details input, .app-content details select { max-width: 100%; min-width: 0; }
+.app-content > details { background: var(--ivory); padding: .6rem 1rem; }
+.app-content > details summary { cursor: pointer; font-weight: bold; }
+.app-content > p[role="status"] { background: var(--ivory); margin: 0; padding: .6rem 1rem; }
+.camera-previews:not(:empty) { background: var(--ivory); padding: 1rem; }

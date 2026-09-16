@@ -73,6 +73,9 @@ class MovementActivity:
         self.last_valid = None
         self.last_time = None
         self.reason = "missing_starting_pose"
+        self.phase_history = []
+        self.completed_cycle = None
+        self.cycle_visibility = 1.0
 
     @property
     def diagnostics(self):
@@ -87,6 +90,8 @@ class MovementActivity:
         self.side = None
         self.values = {}
         self.reason = reason
+        self.phase_history = []
+        self.cycle_visibility = 1.0
 
     def _measure(self, landmarks):
         required = {j for triple in self.movement["features"].values() for j in triple}
@@ -101,6 +106,7 @@ class MovementActivity:
                 best = confidence, side
         if best is None:
             return None
+        self.cycle_visibility = min(self.cycle_visibility, best[0])
         side = best[1]
         try:
             values = {name: angle(*(landmarks[f"{side}_{j}"][:2] for j in joints))
@@ -147,13 +153,19 @@ class MovementActivity:
                 if ms - self.started < self.movement["minCycleMs"]:
                     self._reset("cycle_too_fast")
                     return self._progress()
+                self.completed_cycle = {"cycleId": str(self.count + 1),
+                    "phases": [*self.phase_history, {"name": phase["name"], "atMs": ms}],
+                    "visibility": self.cycle_visibility}
                 self.count += 1
                 self.reason = "rep_completed"
             else:
                 self.reason = "ready"
             self.started = ms
+            self.phase_history = []
+            self.cycle_visibility = 1.0
         else:
             self.reason = "phase_completed"
+        self.phase_history.append({"name": phase["name"], "atMs": ms})
         self.next_phase = (self.next_phase + 1) % len(self.movement["phases"])
         return self._progress()
 

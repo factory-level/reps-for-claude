@@ -659,6 +659,8 @@ pub fn run() {
         }) as SharedDebugProcess)
         .manage(Mutex::new(None) as hub::SharedHub)
         .invoke_handler(tauri::generate_handler![
+            hub::get_camera_settings,
+            hub::save_camera_settings,
             get_snapshot,
             get_app_mode,
             set_app_mode,

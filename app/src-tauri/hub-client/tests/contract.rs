@@ -286,3 +286,48 @@ fn client_follows_the_v1_4_application_transcript() {
         .unwrap();
     server.join().unwrap();
 }
+
+#[test]
+fn client_follows_v1_6_consensus_and_preserves_diagnostics() {
+    let transcript: Transcript = serde_json::from_str(include_str!("contracts/v1.6/consensus.json")).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut ws = tungstenite::accept(stream).unwrap();
+        let mut id = serde_json::Value::Null;
+        for step in transcript.steps {
+            if step.dir == "s2c" {
+                let msg = if let Some(reply) = step.msg.get("reply") { serde_json::json!({"id": id, "result": reply}) } else { step.msg };
+                ws.send(Message::Text(msg.to_string().into())).unwrap();
+            } else {
+                loop {
+                    if let Message::Text(text) = ws.read().unwrap() {
+                        let msg: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        id = msg["id"].clone();
+                        assert_eq!(msg["method"], step.msg["method"]);
+                        assert_eq!(msg["params"], step.msg["params"]);
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let mut client = HubClient::connect(&format!("ws://127.0.0.1:{port}/")).unwrap();
+    let rx = client.take_receiver().unwrap();
+    client.enable_metric(&EnableMetric { metric_id: "workout".into(), plugin_id: "reps_vision".into(),
+        cameras: Some(vec!["webcam".into(), "phone".into()]),
+        config: serde_json::json!({"movementId":"squat","targetReps":2,"sessionId":"session-1","fusion":{"policy":"consensus","quorum":2}}) }).unwrap();
+    assert!(matches!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), VisionEvent::Semantic {kind, ..} if kind == "rep_completed"));
+    match rx.recv_timeout(Duration::from_secs(5)).unwrap() {
+        VisionEvent::Progress {value, context, ..} => {
+            assert_eq!(value, 1.0);
+            assert!(context.belongs_to("workout", Some("session-1")));
+            assert_eq!(context.consensus.unwrap()["state"], "confirmed");
+        },
+        other => panic!("unexpected event: {other:?}"),
+    }
+    client.disable_metric("workout").unwrap();
+    server.join().unwrap();
+}

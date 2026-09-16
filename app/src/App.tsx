@@ -1,3 +1,4 @@
+import { CameraSettings, ConsensusStatus, CameraPreviews } from "./CameraSettings";
 import { invoke } from "@tauri-apps/api/core";
 import { AppModeBar, type AppMode } from "./AppModeBar";
 import { useEffect, useState } from "react";
@@ -28,6 +29,9 @@ export default function App() {
     <div className="app-shell">
       <AppModeBar mode={mode} primary={variant === "primary"} />
       <main className="app-content">
+      {variant === "primary" && <CameraPreviews idle={snapshot.phase === "CODING"} />}
+      <ConsensusStatus idle={snapshot.phase === "CODING"} />
+      {variant === "primary" && <CameraSettings idle={snapshot.phase === "CODING"} />}
       <Screen snapshot={snapshot} variant={variant} debug={mode === "debug"} />
       {mode === "debug" && variant === "primary" && showDebug && (
         <div className="debug-host"><DebugPanel /></div>
