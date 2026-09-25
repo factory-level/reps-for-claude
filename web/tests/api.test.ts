@@ -1,0 +1,95 @@
+import {test,after} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {randomBytes} from 'node:crypto';
+import {activity} from '../lib/validation';
+import {handle,hash} from '../lib/api';
+import {db} from '../lib/db';
+const integration=!!process.env.TEST_DATABASE_URL;
+if(integration){process.env.DATABASE_URL=process.env.TEST_DATABASE_URL;process.env.RATE_LIMIT_SECRET='isolated-test-secret';}
+const req=(path:string,method='GET',body?:unknown,token?:string)=>new Request('http://localhost/api/'+path,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined});
+test('structured posts reject fractional reps, invalid quantities and honeypots',()=>{
+ assert(activity.safeParse({nickname:'Sam',exercise:'squat',quantity:10,unit:'reps'}).success);
+ for(const override of [{quantity:1.5},{quantity:-1},{nickname:''},{website:'spam'},{unit:'kg'}])assert(!activity.safeParse({nickname:'Sam',exercise:'squat',quantity:10,unit:'reps',...override}).success);
+});
+test('public and private lifecycle against isolated Postgres',{skip:!integration},async()=>{
+ const sql=db();await sql.unsafe(await readFile(new URL('../db/001_activity.sql',import.meta.url),'utf8'));
+ await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925175039_rfp_usage_guards.sql',import.meta.url),'utf8'));
+ await sql`truncate reps.activities,reps.datasets,reps.subscribers,reps.rate_limits cascade`;
+ const post={nickname:'Sam',exercise:'squats',quantity:20,unit:'reps',note:'<script>plain text only</script>'};
+ let response=await handle(req('activity','POST',post));assert.equal(response.status,201);const created=await response.json();
+ let feed=await (await handle(req('activity'))).json();assert.equal(feed.items.length,1);assert.equal(feed.items[0].note,post.note);assert(!('deletion_hash'in feed.items[0]));
+ await handle(req(`activity/${created.id}/cheer`,'POST'));await handle(req(`activity/${created.id}/cheer`,'POST'));
+ feed=await(await handle(req('activity'))).json();assert.equal(feed.items[0].cheers,1);
+ assert.equal((await handle(req(`activity/${created.id}`,'DELETE',{token:'wrong'}))).status,404);
+ await handle(req(`activity/${created.id}/report`,'POST'));assert.equal((await sql`select * from reps.reports`).length,1);
+ assert.equal((await handle(req(`activity/${created.id}`,'DELETE',{token:created.deletionToken}))).status,200);
+ assert.equal((await sql`select * from reps.reports`).length,0);
+ await handle(req('subscribe','POST',{email:'SAM@example.com'}));await handle(req('subscribe','POST',{email:'sam@example.com'}));assert.equal((await sql`select * from reps.subscribers`).length,1);
+ assert.equal((await handle(req('subscribers'))).status,404);assert.equal((await handle(req('v1/history'))).status,401);
+ const reader=randomBytes(32).toString('base64url'),uploader=randomBytes(32).toString('base64url'),other=randomBytes(32).toString('base64url');
+ await sql`insert into reps.datasets(id,nickname,autopost,public_after) values('owner','Founder',true,now()-interval '1 day'),('other','Other',false,null)`;
+ for(const [token,scope,dataset] of [[reader,'read','owner'],[uploader,'upload','owner'],[other,'read','other']])await sql`insert into reps.tokens(hash,scope,dataset) values(${hash(token)},${scope},${dataset})`;
+ const records=Array.from({length:10},(_,i)=>({id:'set-'+i,date:'2026-09-24',exercise:'squats',kind:'REP',reps:10,seconds:0,weight:0,verified:false,recordedAt:new Date().toISOString(),weightUnit:'lb'}));
+ assert.equal((await handle(req('v1/sync','POST',{records},reader))).status,403);
+ assert.equal((await handle(req('v1/sync','POST',{records},uploader))).status,200);
+ assert.equal((await handle(req('v1/sync','POST',{records},uploader))).status,200);
+ assert.equal((await sql`select * from reps.workouts`).length,10);assert.equal((await sql`select * from reps.activities`).length,6);
+ let history=await(await handle(req('v1/history?limit=3','GET',undefined,reader))).json();assert.equal(history.records.length,3);assert(history.nextCursor);
+ const page2=await(await handle(req('v1/history?limit=3&cursor='+history.nextCursor,'GET',undefined,reader))).json();assert.notEqual(history.records[0].id,page2.records[0].id);
+ assert.equal((await(await handle(req('v1/history','GET',undefined,other))).json()).records.length,0);
+ assert.equal((await(await handle(req('v1/summary','GET',undefined,reader))).json()).sets,10);
+ await sql`update reps.activities set created_at=now()-interval '2 hours'`;
+ await handle(req('v1/sync','POST',{records:[]},uploader));assert.equal((await sql`select * from reps.activities`).length,10);
+ await sql`delete from reps.tokens where hash=${hash(reader)}`;assert.equal((await handle(req('v1/history','GET',undefined,reader))).status,401);
+ for(let i=0;i<10;i++)response=await handle(req('activity','POST',post));assert.equal(response.status,429);
+ const csrf=new Request('http://localhost/api/activity',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify(post)});assert.equal((await handle(csrf)).status,403);
+ // Supabase anonymous roles have no schema access even if tables are discovered.
+ const grants=await sql`select has_schema_privilege('public','reps','USAGE') allowed`;assert.equal(grants[0].allowed,false);
+});
+test('runtime role can serve RFP but cannot administer credentials or tables',{skip:!integration},async()=>{
+ const sql=db();await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925175420_rfp_runtime_role.sql',import.meta.url),'utf8'));
+ await sql.begin(async tx=>{
+  await tx`set local role rfp_web`;
+  assert.equal((await tx`select has_table_privilege(current_user,'reps.tokens','INSERT') allowed`)[0].allowed,false);
+  assert.equal((await tx`select has_schema_privilege(current_user,'reps','CREATE') allowed`)[0].allowed,false);
+  assert.equal((await tx`select rolbypassrls from pg_roles where rolname=current_user`)[0].rolbypassrls,false);
+  await tx`select reps.consume_budget()`;
+  await tx`select id from reps.datasets where id='owner' for update`;
+  await tx`update reps.datasets set synced_at=now() where id='owner'`;
+  await tx`select dataset,scope from reps.tokens limit 1`;
+  const [post]=await tx`insert into reps.activities(nickname,exercise,quantity,unit,deletion_hash) values('Role test','squat',1,'reps','test') returning id`;
+  await tx`insert into reps.cheers values(${post.id},'test')`;
+  await tx`insert into reps.reports(activity_id,visitor_hash) values(${post.id},'test')`;
+  await tx`delete from reps.activities where id=${post.id}`;
+  await tx`insert into reps.subscribers(email) values('role@example.com') on conflict do nothing`;
+  await tx`update reps.workouts set posted=true where dataset='owner'`;
+ });
+});
+test('shared budgets and concurrent storage caps',{skip:!integration},async()=>{
+ const sql=db();await sql`delete from reps.rate_limits`;
+ const day=Math.floor(Date.now()/86400000),month=Math.floor(Date.now()/2592000000);
+ await sql`insert into reps.rate_limits values('budget:86400',${day},1999)`;
+ const results=await Promise.all(Array.from({length:5},()=>handle(req('activity'))));
+ assert.equal(results.filter(r=>r.status===200).length,1);
+ assert.equal(results.filter(r=>r.status===429).length,4);
+ const blocked=await handle(req('subscribe','POST',{email:'blocked@example.com'}));
+ assert.equal(blocked.status,429);assert.equal(blocked.headers.get('retry-after'),'3600');
+ assert.equal((await sql`select * from reps.subscribers where email='blocked@example.com'`).length,0);
+ await sql`update reps.rate_limits set bucket=${day-1} where key='budget:86400'`;
+ assert.equal((await handle(req('activity'))).status,200);
+ await sql`insert into reps.rate_limits values('budget:2592000',${month},40000) on conflict(key) do update set count=40000,bucket=excluded.bucket`;
+ assert.equal((await handle(req('activity'))).status,429);
+ await sql`delete from reps.rate_limits`;
+ await sql`drop trigger storage_cap on reps.subscribers`;
+ await sql`create trigger storage_cap before insert on reps.subscribers for each row execute function reps.limit_storage('2')`;
+ await sql`truncate reps.subscribers`;
+ const signup=await Promise.all(Array.from({length:5},(_,i)=>handle(req('subscribe','POST',{email:`cap${i}@example.com`}))));
+ assert.equal(signup.filter(r=>r.status===200).length,2);
+ assert.equal((await sql`select * from reps.subscribers`).length,2);
+ await sql`delete from reps.rate_limits`;
+ const [existing]=await sql`select email from reps.subscribers limit 1`;
+ assert.equal((await handle(req('subscribe','POST',existing))).status,200);
+});
+
+after(async()=>{if(integration)await db().end();});

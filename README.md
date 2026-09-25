@@ -66,3 +66,11 @@ In Debug, choose an **Exercise** in the bottom toolbar, then press **F2 Start
 camera**. All shipped detectors are available regardless of the daily routine.
 Changing the selection during a test restarts detection with a fresh count.
 Lift tests target 10 reps; jump rope targets 60 seconds and stretching 30 seconds.
+
+## RFP: reps for prompts
+
+The daily-use release adds passive Codex/Claude detection, gentle snoozable
+reminders, login startup, a private-history CLI, and an account-free activity site.
+See [dogfooding and CLI setup](docs/production/rfp-dogfood.md) and
+[activity site deployment](web/README.md). Automatic public posting is explicitly
+configured per private dataset and limited to six posts per hour.

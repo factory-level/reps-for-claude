@@ -44,3 +44,18 @@ Requirements: [production target](../../../usb-mcp-hub/docs/design/production-ta
 
 This page describes source behavior. It does not assert that a previously built
 installer contains subsequent source changes.
+
+## RFP daily use and activity page
+
+The Linux app now supports a passive gentle-reminder mode, same-user
+Codex/Claude process detection, persisted snooze, a tray, and a user-service
+installer. `reps-cli` shares the engine's history contract and offers readonly
+local queries and scoped remote reads. SQLite records have stable IDs and a
+persistent upload acknowledgement flag; timestamps/units are nullable for
+legacy records.
+
+The `web/` Next.js application exposes anonymous structured activity posts,
+cheers, reports, separate email capture, and a private versioned sync/read API.
+Publications from private datasets require operator opt-in, are deduplicated,
+and capped at six per rolling hour. See
+[dogfood setup and limits](../production/rfp-dogfood.md) for operating details.

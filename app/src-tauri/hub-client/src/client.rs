@@ -68,7 +68,9 @@ impl HubClient {
         };
         client.rpc(
             "subscribe",
-            serde_json::json!({"streams": ["landmarks", "progress", "event", "health"]}),
+            serde_json::json!({"streams": if client.api_version.split('.').nth(1).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0) >= 6 {
+                vec!["landmarks", "progress", "event", "health", "frame"]
+            } else { vec!["landmarks", "progress", "event", "health"] }}),
         )?;
         Ok(client)
     }

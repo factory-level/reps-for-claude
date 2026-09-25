@@ -81,6 +81,7 @@ class RepsVisionPlugin:
     def describe_capabilities(self) -> dict:
         return {
             "supports": ["evaluate", "stream"],
+            "cycleEvidenceVersion": 1,
             "model": MODEL,
             "configSchema": CONFIG_SCHEMA,
             "observationSchema": OBSERVATION_SCHEMA,
@@ -137,6 +138,7 @@ class RepsVisionPlugin:
             capture=capture,
             emit=emit,
             frame_times_ms=(self._config or {}).get("replayTimesMs"),
+            timing_calibration=(self._config or {}).get("timingCalibration"),
             provenance={key: self._config[key] for key in ("movementId", "movementVersion", "sessionId", "detectionId") if key in (self._config or {})},
         )
         self._loop.start()
@@ -197,11 +199,23 @@ def _redact_camera(camera: dict) -> dict:
 
 
 def _cv2_capture(camera: dict):
+    if camera.get("source") == "file":
+        return _open_cv2_capture(camera)
+    from .live_capture import LiveCapture
+    return LiveCapture(lambda: _open_cv2_capture(camera))
+
+
+def _open_cv2_capture(camera: dict):
+    import os
+    os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
     import cv2
 
     source = camera.get("source", "index")
     value = camera.get("value", 0)
-    capture = cv2.VideoCapture(value if source in ("file", "uri") else int(value))
+    if isinstance(value, str) and value.startswith(("rtsp://", "rtsps://")):
+        capture = cv2.VideoCapture(value, cv2.CAP_FFMPEG, [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 2000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000])
+    else:
+        capture = cv2.VideoCapture(value if source in ("file", "uri") else int(value))
     if not capture.isOpened():
         raise RuntimeError(f"cannot open camera: {_redact_camera(camera)}")
     if "width" in camera:

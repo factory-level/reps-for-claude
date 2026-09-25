@@ -63,11 +63,51 @@ impl Store {
         if version.is_none() {
             conn.execute("INSERT INTO schema_version (version) VALUES (1)", [])?;
         }
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let migration = (|| -> rusqlite::Result<()> {
+            let has_id: bool = conn.query_row("SELECT count(*) FROM pragma_table_info('exercise_history') WHERE name='public_id'", [], |r| r.get::<_, i64>(0)).map(|n| n > 0)?;
+            if !has_id {
+                conn.execute_batch("ALTER TABLE exercise_history ADD COLUMN public_id TEXT;
+                    ALTER TABLE exercise_history ADD COLUMN recorded_at TEXT;
+                    ALTER TABLE exercise_history ADD COLUMN weight_unit TEXT;
+                    ALTER TABLE exercise_history ADD COLUMN synced INTEGER NOT NULL DEFAULT 0;
+                    UPDATE exercise_history SET public_id=lower(hex(randomblob(16)));
+                    CREATE UNIQUE INDEX history_public_id ON exercise_history(public_id);
+                    UPDATE schema_version SET version=2;")?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = migration { let _ = conn.execute_batch("ROLLBACK"); return Err(error); }
+        conn.execute_batch("COMMIT")?;
+        conn.busy_timeout(std::time::Duration::from_secs(3))?;
         let store = Self { conn };
         if store.load_rotation()?.is_empty() {
             store.save_rotation(&default_rotation())?;
         }
         Ok(store)
+    }
+
+    pub fn open_readonly(path: &Path) -> rusqlite::Result<Self> {
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(std::time::Duration::from_secs(3))?;
+        Ok(Self { conn })
+    }
+
+    pub fn records(&self, from: Option<&str>, to: Option<&str>, cursor: i64, limit: u32, pending: bool) -> rusqlite::Result<Vec<crate::history::HistoryRecord>> {
+        let mut stmt = self.conn.prepare("SELECT id,public_id,date,exercise,kind,reps,seconds,weight,verified,recorded_at,weight_unit FROM exercise_history WHERE (?1 IS NULL OR date>=?1) AND (?2 IS NULL OR date<=?2) AND (?3=0 OR id<?3) AND (?4=0 OR synced=0) ORDER BY id DESC LIMIT ?5")?;
+        let rows = stmt.query_map(params![from,to,cursor,pending,limit], |r| Ok(crate::history::HistoryRecord {
+            sequence: r.get(0)?, id:r.get(1)?, date:r.get(2)?, exercise:r.get(3)?, kind:kind_from_str(&r.get::<_,String>(4)?),reps:r.get(5)?,seconds:r.get(6)?,weight:r.get(7)?,verified:r.get(8)?,recorded_at:r.get(9)?,weight_unit:r.get(10)?
+        }))?.collect();
+        rows
+    }
+
+    pub fn summary(&self, from: Option<&str>, to: Option<&str>) -> rusqlite::Result<serde_json::Value> {
+        self.conn.query_row("SELECT count(*),coalesce(sum(reps),0),coalesce(sum(seconds),0) FROM exercise_history WHERE (?1 IS NULL OR date>=?1) AND (?2 IS NULL OR date<=?2)",params![from,to],|r| Ok(serde_json::json!({"schemaVersion":1,"source":"local","sets":r.get::<_,i64>(0)?,"reps":r.get::<_,i64>(1)?,"seconds":r.get::<_,f64>(2)?})))
+    }
+
+    pub fn acknowledge(&self, ids: &[String]) -> rusqlite::Result<()> {
+        for id in ids { self.conn.execute("UPDATE exercise_history SET synced=1 WHERE public_id=?1", [id])?; }
+        Ok(())
     }
 
     pub fn load_rotation(&self) -> rusqlite::Result<Vec<ExerciseDef>> {
@@ -132,8 +172,8 @@ impl Store {
 
     pub fn record_set(&self, rec: &SetRecord) -> rusqlite::Result<()> {
         self.conn.execute(
-            "INSERT INTO exercise_history (date, exercise, kind, reps, seconds, weight, verified)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO exercise_history (date, exercise, kind, reps, seconds, weight, verified,public_id,recorded_at,weight_unit)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,lower(hex(randomblob(16))),strftime('%Y-%m-%dT%H:%M:%fZ','now'),'lb')",
             params![
                 rec.date,
                 rec.exercise,

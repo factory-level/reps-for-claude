@@ -55,6 +55,12 @@ impl Session {
         self.timer.start(now);
     }
 
+    pub fn defer_timer(&mut self, seconds: f64) { self.timer.defer(seconds); }
+
+    pub fn configure_timer(&mut self, minutes: f64, now: f64) {
+        self.timer.configure(minutes * 60.0, now);
+    }
+
     pub fn tick(&mut self, now: f64, today: &str) -> bool {
         if self.phase == Phase::Coding && self.timer.expired(now) {
             self.timer.stop();

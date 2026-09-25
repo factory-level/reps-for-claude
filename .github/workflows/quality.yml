@@ -42,3 +42,32 @@ jobs:
           # Unit/contract tests do not package the separately staged hub SDK.
           # The qualification runner verifies the real bundle locally.
           TAURI_CONFIG: '{"bundle":{"resources":null}}'
+  activity-site:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: rfp-ci-only
+          POSTGRES_DB: rfp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --global pnpm@9.15.0
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm build
+        working-directory: web
+      - run: pnpm test
+        working-directory: web
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:rfp-ci-only@127.0.0.1:5432/rfp_test

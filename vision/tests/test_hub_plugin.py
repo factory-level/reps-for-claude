@@ -160,6 +160,9 @@ def test_cv2_capture_passes_uri_sources_through():
 
     class FakeCv2:
         CAP_PROP_FRAME_WIDTH = 3
+        CAP_FFMPEG = 1900
+        CAP_PROP_OPEN_TIMEOUT_MSEC = 53
+        CAP_PROP_READ_TIMEOUT_MSEC = 54
 
         class FakeVideoCapture:
             def __init__(self, value):
@@ -171,7 +174,7 @@ def test_cv2_capture_passes_uri_sources_through():
             def set(self, *_args):
                 pass
 
-        def VideoCapture(self, value):
+        def VideoCapture(self, value, *args):
             self.opened = value
             return self.FakeVideoCapture(value)
 
@@ -180,11 +183,11 @@ def test_cv2_capture_passes_uri_sources_through():
     real = sys.modules.get("cv2")
     sys.modules["cv2"] = fake
     try:
-        capture = plugin_module._cv2_capture(
+        capture = plugin_module._open_cv2_capture(
             {"source": "uri", "value": "rtsp://127.0.0.1:8554/front"}
         )
         assert capture.capture.value == "rtsp://127.0.0.1:8554/front"
-        capture = plugin_module._cv2_capture({"source": "index", "value": "0"})
+        capture = plugin_module._open_cv2_capture({"source": "index", "value": "0"})
         assert capture.capture.value == 0
     finally:
         if real is not None:

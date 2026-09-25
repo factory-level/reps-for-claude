@@ -8,3 +8,7 @@ pub mod store;
 pub mod timer;
 pub mod types;
 pub mod workout;
+
+pub mod activity;
+
+pub mod history;

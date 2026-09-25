@@ -14,6 +14,16 @@ impl CodingTimer {
         self.deadline = Some(now + self.duration);
     }
 
+    /// Move the deadline forward when activity is paused or the machine slept.
+    pub fn defer(&mut self, seconds: f64) {
+        if let Some(deadline) = self.deadline.as_mut() { *deadline += seconds.max(0.0); }
+    }
+
+    pub fn configure(&mut self, duration: f64, now: f64) {
+        self.duration = duration;
+        self.start(now);
+    }
+
     pub fn stop(&mut self) {
         self.deadline = None;
     }
@@ -55,4 +65,14 @@ mod tests {
         assert!(!t.expired(1000.0));
         assert_eq!(t.remaining(1000.0), 360.0);
     }
+}
+
+#[cfg(test)] mod passive_tests {
+ use super::*;
+ #[test] fn pause_and_sleep_preserve_remaining() {
+  let mut timer=CodingTimer::new(1500.);timer.start(100.);
+  assert_eq!(timer.remaining(200.),1400.);
+  timer.defer(3600.);assert_eq!(timer.remaining(3800.),1400.);
+  assert!(!timer.expired(5199.));assert!(timer.expired(5200.));
+ }
 }
