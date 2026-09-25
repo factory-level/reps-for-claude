@@ -565,13 +565,13 @@ fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
             // Landmarks are terminal-only now: nothing in the webviews listens,
             // and pushing them at camera rate into both windows leaked memory.
             VisionEvent::CameraFrame { camera_id, data } => {
-                if DETECTOR_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
-                    let _ = app.emit("vision-camera", serde_json::json!({"cameraId": camera_id, "data": data}));
+                if DETECTOR_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) && crate::control::camera_frame(&app) {
+                    let _ = app.emit_to("main", "vision-camera", serde_json::json!({"cameraId": camera_id, "data": data}));
                 }
             }
             VisionEvent::Landmarks(data) => print_detect(&data),
             VisionEvent::Progress { value, unit, satisfied, context } => {
-                if !DETECTOR_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) { continue; }
+                if !DETECTOR_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) || crate::control::preview_only(&app) { continue; }
                 if !context.belongs_to(WORKOUT_METRIC, session_id().as_deref()) {
                     continue;
                 }
@@ -590,6 +590,7 @@ fn pump_events(app: AppHandle, rx: std::sync::mpsc::Receiver<VisionEvent>) {
             }
             VisionEvent::Semantic { kind, payload } => {
                 if kind == "detector_error" || kind == "stream_ended" {
+                    crate::control::error(&app,format!("{kind}: {payload}"));
                     let _ = app.emit("vision-fallback", serde_json::json!({"reason": kind, "details": payload}));
                 }
                 if kind == "rep_completed" || kind == "target_reached" {

@@ -30,11 +30,11 @@ describe("Screen", () => {
     expect(screen.getByText(/05:59/)).toBeInTheDocument();
   });
 
-  it("primary shows the padlock and remaining sets while locked", () => {
+  it("primary offers a gentle reminder before starting the camera", () => {
     render(<Screen snapshot={{ ...base, phase: "EXERCISE_REQUIRED" }} variant="primary" />);
     expect(screen.getByText("WORKOUT")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "locked" })).toBeInTheDocument();
-    expect(screen.getByText("24")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "locked" })).not.toBeInTheDocument();
+    expect(screen.getByText(/start when ready/)).toBeInTheDocument();
   });
 
   it("gym shows the live count in the prescription's unit", () => {

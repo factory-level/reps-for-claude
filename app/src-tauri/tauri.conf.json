@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Reps for Claude",
+  "productName": "RFP",
   "version": "0.1.0",
   "identifier": "dev.calvin.reps-for-claude",
   "build": {
@@ -13,20 +13,22 @@
     "windows": [
       {
         "label": "main",
-        "title": "Reps for Claude",
+        "title": "RFP: reps for prompts",
         "width": 1280,
         "height": 720,
         "visible": false,
-        "focus": false
+        "focus": false,
+        "decorations": false
       },
       {
         "label": "gym",
-        "title": "Reps \u2014 Gym",
+        "title": "RFP \u2014 Workout",
         "width": 960,
         "height": 540,
         "url": "index.html?window=gym",
         "visible": false,
-        "focus": false
+        "focus": false,
+        "decorations": false
       }
     ],
     "security": {

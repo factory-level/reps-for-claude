@@ -1,3 +1,4 @@
+mod control;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -38,6 +39,7 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 mod hub;
 mod windows;
 mod runtime;
+mod daily;
 use runtime::{AppMode, Runtime};
 
 /// Installer diagnostic: use the same Tauri resource lookup and supervisor as
@@ -85,7 +87,7 @@ fn build_core(dir: &Path) -> Core {
     let work_minutes: f64 = std::env::var("REPS_WORK_MINUTES")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| store.setting("work_minutes", "6").parse().unwrap_or(6.0));
+        .unwrap_or_else(|| store.setting("work_minutes", "25").parse().unwrap_or(25.0));
     let capacity: u32 = store.setting("max_weighted_sets", "20").parse().unwrap_or(20);
     let rotation = store.load_rotation().expect("load rotation");
     let mut workout = WorkoutEngine::new(rotation, default_continuous_pool(), capacity);
@@ -167,7 +169,7 @@ pub(crate) fn print_state(snap: &Snapshot) {
         Phase::Coding => {
             let rem = snap.remaining_seconds.max(0.0) as u64;
             let next = snap.rotation.get(snap.pointer).map(|s| s.as_str()).unwrap_or("—");
-            format!("[STATE] ⌨️  CODING · {}:{:02} left · next: {}", rem / 60, rem % 60, next)
+            format!("[STATE] ⌨️  CODING · ~{} min left · next: {}", rem.div_ceil(60), next)
         }
         Phase::ExerciseRequired => format!("[STATE] 🔒 LOCKED · do {} · {}", ex, target),
         Phase::WorkoutActive => format!("[STATE] 🏋️  ACTIVE · {} · {} / {}", ex, value, target),
@@ -258,6 +260,8 @@ fn shutdown_runtime(app: &AppHandle) {
 fn emergency_escape(app: AppHandle, state: State<SharedCore>) -> Snapshot {
     let mut core = state.lock().unwrap();
     core.session.debug_force_coding(SystemClock.now());
+    let minutes = core.store.setting("work_minutes", "25").parse().unwrap_or(25.);
+    core.session.configure_timer(minutes, SystemClock.now());
     let snap = persist_and_snapshot(&mut core);
     drop(core);
     hub::disable_metric_async(&app);
@@ -605,7 +609,8 @@ fn debug_stream_start(
             }
             match serde_json::from_str::<serde_json::Value>(trimmed) {
                 Ok(value) => {
-                    let _ = handle.emit(DEBUG_STREAM_EVENT, value);
+                    control::video_event(&handle,&value);
+                    let _ = handle.emit_to("main", DEBUG_STREAM_EVENT, value);
                 }
                 Err(_) => {
                     let _ = handle.emit(
@@ -648,9 +653,17 @@ fn debug_stream_stop(app: AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _instance = match daily::instance_lock(&dirs_next_data_dir()) {
+        Ok(file) => file, Err(error) => { eprintln!("{error}"); return; }
+    };
     let runtime = Runtime::load(dirs_next_data_dir()).expect("load application mode");
     let core = build_core(&runtime.session_home);
+    runtime.lock_mode.store(false, std::sync::atomic::Ordering::SeqCst);
+    let _ = core.store.set_setting("lock_mode", "0");
+    let snooze_until = core.store.setting("snooze_until", "0").parse().unwrap_or(0.);
     let app = tauri::Builder::default()
+        .manage(Mutex::new(control::DisplayState::default()))
+        .manage(Mutex::new(daily::Daily { agents: Default::default(), snooze_until, checked_at: 0. }))
         .manage(runtime)
         .manage(Mutex::new(core) as SharedCore)
         .manage(Mutex::new(DebugProcess {
@@ -659,6 +672,14 @@ pub fn run() {
         }) as SharedDebugProcess)
         .manage(Mutex::new(None) as hub::SharedHub)
         .invoke_handler(tauri::generate_handler![
+            control::get_display_state,
+            daily::daily_status,
+            daily::recent_history,
+            daily::routine_settings,
+            daily::save_routine,
+            daily::share_workout,
+            daily::reminder_action,
+            daily::save_daily_settings,
             hub::get_camera_settings,
             hub::save_camera_settings,
             get_snapshot,
@@ -680,7 +701,8 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
-                    window.app_handle().exit(0);
+                    if window.app_handle().state::<Runtime>().is_debug() { window.app_handle().exit(0); }
+                    else { let _ = window.hide(); }
                 } else if window.app_handle().state::<Runtime>().is_debug() {
                     api.prevent_close();
                     let _ = window.hide();
@@ -688,6 +710,24 @@ pub fn run() {
             }
         })
         .setup(|app| {
+
+            control::start(app.handle()).map_err(std::io::Error::other)?;
+            if !app.state::<Runtime>().is_debug() {
+                let home = dirs_next_data_dir(); let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let mut delay = 300u64;
+                    while !handle.state::<Runtime>().is_stopping() {
+                        if home.join("upload.json").exists() {
+                            if let Err(error) = reps_cli::sync(&home) {
+                                let state = handle.state::<SharedCore>();
+                                let _ = state.lock().unwrap().store.set_setting("sync_status", &error);
+                                delay = (delay * 2).min(3600);
+                            } else { delay = 300; }
+                        }
+                        std::thread::sleep(Duration::from_secs(delay));
+                    }
+                });
+            }
             hub::start(app.handle().clone());
             windows::place(app.handle());
             let handle = app.handle().clone();
@@ -701,6 +741,8 @@ pub fn run() {
             }
             std::thread::spawn(move || {
                 let mut unlocked_since: Option<f64> = None;
+                let mut previous = SystemClock.now();
+                let mut last_poll = 0.;
                 loop {
                     std::thread::sleep(Duration::from_secs(1));
                     let clock = SystemClock;
@@ -708,22 +750,60 @@ pub fn run() {
                     let state = handle.state::<SharedCore>();
                     let mut core = state.lock().unwrap();
                     if handle.state::<Runtime>().is_stopping() { break; }
-                    let locked_now = !handle.state::<Runtime>().is_debug() && core.session.tick(now, &today);
+                    let daily_state = handle.state::<daily::SharedDaily>();
+                    let mut daily = daily_state.lock().unwrap();
+                    let poll_due = now - last_poll >= 5.;
+                    if poll_due { daily::refresh(&mut daily); last_poll = now; }
+                    let elapsed = (now - previous).max(0.); previous = now;
+                    core.session.defer_timer(engine::activity::excluded_elapsed(elapsed, daily.agents.active() && !control::preview_only(&handle), daily.snooze_until > now));
+                    if daily.snooze_until > 0. && daily.snooze_until <= now {
+                        daily.snooze_until = 0.;
+                        let _ = core.store.set_setting("snooze_until", "0");
+                        core.session.configure_timer(0., now);
+                    }
+                    let can_remind = daily.agents.active() && daily.snooze_until <= now && !control::preview_only(&handle);
+                    drop(daily);
+                    let before = core.session.snapshot(now);
+                    let remaining = before.day.as_ref().map(|d|d.sets_total.saturating_sub(d.sets_done)).unwrap_or(0);
+                    let end = reps_cli::workday::parse_time(&core.store.setting("workday_end","18:00")).unwrap_or(1080);
+                    let lead = core.store.setting("workday_warn_minutes","60").parse().unwrap_or(60);
+                    let warn = poll_due && reps_cli::workday::due(reps_cli::workday::local_minute(),end,lead,
+                        !handle.state::<Runtime>().is_debug() && can_remind && matches!(before.phase,Phase::Coding|Phase::ExerciseRequired),
+                        remaining,core.store.setting("last_day_warning","")==today);
+                    if warn && core.store.set_setting("last_day_warning",&today).is_ok() {
+                        let message=format!("Your workday is ending soon or has ended. {remaining} workout sets remain — you might miss today's routine. Start when ready: rfp start");
+                        let display={let state=handle.state::<control::SharedDisplay>();let mut display=state.lock().unwrap();display.notice=Some(message.clone());display.clone()};
+                        let _=handle.emit("display-state",display);
+                        daily::notify(message);
+                        if before.phase==Phase::Coding {core.session.configure_timer(0.,now);}
+                        if let Some(window)=handle.get_webview_window("main"){let _=window.show();let _=window.unminimize();}
+                    }
+                    // Clear a warning after starting a set or when the local date changes.
+                    if !matches!(before.phase,Phase::Coding|Phase::ExerciseRequired) || core.store.setting("last_day_warning","")!=today {
+                        let changed={let state=handle.state::<control::SharedDisplay>();let mut display=state.lock().unwrap();display.notice.take().map(|_|display.clone())};
+                        if let Some(display)=changed{let _=handle.emit("display-state",display);}
+                    }
+                    let locked_now = !handle.state::<Runtime>().is_debug() && can_remind && core.session.tick(now, &today);
                     let mut snap = core.session.snapshot(now);
                     if locked_now {
-                        // Emit EXERCISE_REQUIRED first so the durable lock events
-                        // fire, then auto-start: the camera comes on the moment
-                        // a set is owed (spec §20 — no button).
+                        // Show the passive reminder; CLI starts the camera.
+                        if !warn {daily::notify("Time for a little movement. Start your next workout from the terminal: rfp start".into());}
                         emit_snapshot(&handle, &snap);
-                        core.session.begin_workout();
-                        snap = persist_and_snapshot(&mut core);
-                        enable_metric_for(&handle, &snap);
+                        if handle.state::<Runtime>().enforces_windows() {
+                            core.session.begin_workout();
+                            snap = persist_and_snapshot(&mut core);
+                            enable_metric_for(&handle, &snap);
+                        } else if let Some(window) = handle.get_webview_window("main") {
+                            let _ = window.show(); let _ = window.unminimize();
+                        }
                     }
                     // The "LOGGED" beat: 3s in UNLOCKED, then CODE (main minimizes).
                     if !handle.state::<Runtime>().is_debug() && snap.phase == Phase::Unlocked {
                         let since = *unlocked_since.get_or_insert(now);
                         if now - since >= 3.0 {
                             core.session.resume_coding(now);
+                            let minutes = core.store.setting("work_minutes", "25").parse().unwrap_or(25.);
+                            core.session.configure_timer(minutes, now);
                             snap = persist_and_snapshot(&mut core);
                             unlocked_since = None;
                             // Belt and braces: an aborted workout must release the camera.
@@ -732,6 +812,10 @@ pub fn run() {
                     } else {
                         unlocked_since = None;
                     }
+                    let presence = handle.state::<daily::SharedDaily>().lock().unwrap().agents.clone();
+                    let runtime_status = serde_json::json!({"pid":std::process::id(),"updatedAt":now,"agents":presence,"phase":snap.phase,"remainingSeconds":snap.remaining_seconds,"mode":handle.state::<Runtime>().mode,"lockMode":handle.state::<Runtime>().enforces_windows()});
+                    let status_home = &handle.state::<Runtime>().session_home;
+                    if poll_due && std::fs::write(status_home.join("status.json.tmp"), runtime_status.to_string()).is_ok() { let _ = std::fs::rename(status_home.join("status.json.tmp"), status_home.join("status.json")); }
                     drop(core);
                     emit_snapshot(&handle, &snap);
                     windows::refocus(&handle);

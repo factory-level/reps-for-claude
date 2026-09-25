@@ -69,8 +69,8 @@ fn remember(app: &AppHandle, key: &str, value: &str) {
 
 /// Startup placement: main on the primary monitor, gym on its monitor.
 pub(crate) fn place(app: &AppHandle) {
-    if app.state::<crate::Runtime>().is_debug() {
-        if let Some(main) = app.get_webview_window("main") { let _ = main.show(); }
+    if !app.state::<crate::Runtime>().enforces_windows() {
+        if !std::env::args().any(|a| a == "--background") { if let Some(main) = app.get_webview_window("main") { let _ = main.show(); } }
         return;
     }
     let (Some(main), Some(gym)) = (app.get_webview_window("main"), app.get_webview_window("gym")) else {
@@ -219,7 +219,7 @@ pub(crate) fn release(app: &AppHandle) {
             let _ = window.set_fullscreen(false);
             let _ = window.set_always_on_top(false);
             let _ = window.set_visible_on_all_workspaces(false);
-            let _ = window.set_decorations(true);
+            let _ = window.set_decorations(false);
         }
     }
     give_back();

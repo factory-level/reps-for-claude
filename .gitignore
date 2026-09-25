@@ -25,3 +25,13 @@ app/src-tauri/resources/models/
 app/src-tauri/resources/boot-hub.mjs
 
 app/src-tauri/resources/debug-videos/
+
+# Activity site and local credentials
+web/.next/
+web/.env*
+!web/.env.example
+web/*.tsbuildinfo
+.vercel/
+
+# Supabase CLI machine-local link state
+**/supabase/.temp/

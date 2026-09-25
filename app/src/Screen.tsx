@@ -2,14 +2,12 @@
 // title / character / status — from the same snapshot; only the status band
 // differs: the primary monitor shows the padlock + debt (and takes the weight
 // and the escape keys), the gym display shows the live count.
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Snapshot } from "./snapshot";
 
 export type Variant = "primary" | "gym";
 
-const ESCAPE_HOLD_MS = 3000;
 
 export const mmss = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -17,49 +15,16 @@ export const mmss = (s: number) =>
 export const debtOf = (snapshot: Snapshot): number | null =>
   snapshot.day ? snapshot.day.setsTotal - snapshot.day.setsDone : null;
 
-function Padlock() {
-  // 16×16 pixel padlock; the shackle hole is ink, no transparency needed.
-  const ink = "var(--ink)";
-  const body = "var(--clawd)";
-  return (
-    <svg className="padlock" viewBox="0 0 16 16" aria-label="locked" role="img">
-      <rect x="3" y="0" width="10" height="7" fill={ink} />
-      <rect x="4" y="1" width="8" height="5" fill={body} />
-      <rect x="6" y="3" width="4" height="3" fill={ink} />
-      <rect x="1" y="6" width="14" height="10" fill={ink} />
-      <rect x="2" y="7" width="12" height="8" fill={body} />
-      <rect x="7" y="9" width="2" height="3" fill={ink} />
-    </svg>
-  );
-}
-
 function WeightEntry({ initial }: { initial: number }) {
-  const [weight, setWeight] = useState(initial);
-  return (
-    <>
-      <span className="small">Set done · log weight (lbs)</span>
-      <input
-        className="weight"
-        type="number"
-        step={5}
-        min={0}
-        autoFocus
-        value={weight}
-        onChange={(e) => setWeight(Number(e.target.value))}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void invoke("confirm_weight", { weight });
-        }}
-        aria-label="weight in pounds"
-      />
-      <span className="small">Enter to log</span>
-    </>
-  );
+ return <><span className="medium">Set complete</span><span className="small">Log from your terminal</span><span className="small">rfp finish --weight {initial}</span></>;
 }
 
 function PrimaryStatus({ snapshot, fallback, debug }: { snapshot: Snapshot; fallback: boolean; debug: boolean }) {
   switch (snapshot.phase) {
     case "CODING":
       return <span className="small">{debug ? "Idle · start a test when you’re ready" : `Next workout in ${mmss(snapshot.remainingSeconds)}`}</span>;
+    case "EXERCISE_REQUIRED":
+      return <span className="small">Time for a little movement · start when ready: rfp start</span>;
     case "WEIGHT_CONFIRMATION":
       return <WeightEntry key={snapshot.prescription?.exercise} initial={snapshot.prescription?.defaultWeight ?? 0} />;
     default: {
@@ -74,10 +39,10 @@ function PrimaryStatus({ snapshot, fallback, debug }: { snapshot: Snapshot; fall
             {label} · {Math.floor(snapshot.progress?.value ?? 0)} / {target} {reps ? "reps" : "sec"}
           </span>
           <div className="lockrow">
-            {!debug && <Padlock />}
+
             <span className="big">{debt ?? "!"}</span>
           </div>
-          <span className="small">{fallback ? "Camera down · press H for honor mode" : debug ? "Test progress · not saved to your workouts" : "Workout debt remaining"}</span>
+          <span className="small">{fallback ? "Camera down · finish via rfp finish --honor" : debug ? "Test progress · not saved to your workouts" : "A little movement between prompts"}</span>
         </>
       );
     }
@@ -121,50 +86,14 @@ export function Screen({ snapshot, variant, debug = false }: { snapshot: Snapsho
   const coding = snapshot.phase === "CODING";
   const mode = coding ? "code" : "workout";
   const [fallback, setFallback] = useState(false);
-  const fallbackRef = useRef(false);
-  fallbackRef.current = fallback;
-  const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   useEffect(() => {
     if (coding) setFallback(false);
   }, [coding]);
-
-  // Gym window: F11 toggles fullscreen (remembered across launches).
   useEffect(() => {
-    if (variant !== "gym") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "F11") void invoke("toggle_gym_fullscreen");
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [variant]);
-
-  useEffect(() => {
-    if (variant !== "primary") return;
-    const unlisten = listen<{ reason: string }>("vision-fallback", () => setFallback(true));
-    // Escape hatch (spec §14): hold Ctrl+Shift+Backspace for 3s. Honor mode: H.
-    const down = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === "Backspace" && !hold.current) {
-        hold.current = setTimeout(() => void invoke("emergency_escape"), ESCAPE_HOLD_MS);
-      } else if (e.key.toLowerCase() === "h" && fallbackRef.current) {
-        void invoke("honor_complete");
-      }
-    };
-    const up = (e: KeyboardEvent) => {
-      if (e.key === "Backspace" || e.key === "Control" || e.key === "Shift") {
-        if (hold.current) clearTimeout(hold.current);
-        hold.current = null;
-      }
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => {
-      if (hold.current) clearTimeout(hold.current);
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-      void unlisten.then((u) => u());
-    };
-  }, [variant]);
+    let active=true;let remove:(()=>void)|undefined;
+    void listen<{reason:string}>("vision-fallback",()=>{if(active)setFallback(true);}).then(fn=>{if(active)remove=fn;else fn();});
+    return()=>{active=false;remove?.();};
+  },[]);
 
   // Set logged → whole-screen takeover for the beat before CODE.
   if (snapshot.phase === "UNLOCKED") {

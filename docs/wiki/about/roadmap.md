@@ -12,3 +12,9 @@ Public-video and software results do not establish production accuracy.
 
 See [design](../../design/index.md), [as-built coverage](../../architecture/index.md),
 and [software readiness](../../production/software-readiness.md).
+
+RFP adds gentle passive reminders while local Codex/Claude processes are open,
+a private-history CLI, and an account-free public activity site. See
+[dogfood setup](../../production/rfp-dogfood.md). Live public sync requires the
+site database and scoped credentials; physical-camera qualification remains a
+separate gate.

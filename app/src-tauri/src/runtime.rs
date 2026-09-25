@@ -12,6 +12,7 @@ pub struct Runtime {
     pub normal_home: PathBuf,
     pub session_home: PathBuf,
     pub stopping: AtomicBool,
+    pub lock_mode: AtomicBool,
     pub detector_generation: AtomicU64,
 }
 
@@ -31,12 +32,12 @@ impl Runtime {
             }
             path
         } else { normal_home.clone() };
-        Ok(Self {mode, normal_home, session_home, stopping: AtomicBool::new(false), detector_generation: AtomicU64::new(0)})
+        Ok(Self {mode, normal_home, session_home, stopping: AtomicBool::new(false), lock_mode: AtomicBool::new(false), detector_generation: AtomicU64::new(0)})
     }
 
     pub fn is_debug(&self) -> bool { self.mode == AppMode::Debug }
     pub fn is_stopping(&self) -> bool { self.stopping.load(Ordering::SeqCst) }
-    pub fn enforces_windows(&self) -> bool { !self.is_debug() && !self.is_stopping() }
+    pub fn enforces_windows(&self) -> bool { !self.is_debug() && !self.is_stopping() && self.lock_mode.load(Ordering::SeqCst) }
     pub fn require_debug(&self) -> Result<(), String> {
         if self.is_debug() && !self.is_stopping() { Ok(()) }
         else { Err("Manual testing requires Debug mode".into()) }
@@ -75,7 +76,9 @@ mod tests {
         assert!(!home.exists()); // Opening Debug did not create a real workout DB.
         runtime.save_mode(AppMode::Workout).unwrap(); runtime.cleanup();
         let normal = Runtime::load(home.clone()).unwrap();
-        assert_eq!(normal.session_home, home); assert!(normal.enforces_windows());
+        assert_eq!(normal.session_home, home); assert!(!normal.enforces_windows());
+        normal.lock_mode.store(true, Ordering::SeqCst);
+        assert!(normal.enforces_windows());
         assert!(normal.require_debug().is_err());
         assert!(normal.begin_stop()); assert!(!normal.begin_stop());
         assert!(!normal.enforces_windows());
