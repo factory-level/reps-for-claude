@@ -2,22 +2,28 @@ import {test,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
-import {activity} from '../lib/validation';
+import {profileUpdate} from '../lib/validation';
 import {handle,hash} from '../lib/api';
 import {db} from '../lib/db';
 const integration=!!process.env.TEST_DATABASE_URL;
 if(integration){process.env.DATABASE_URL=process.env.TEST_DATABASE_URL;process.env.RATE_LIMIT_SECRET='isolated-test-secret';}
 const req=(path:string,method='GET',body?:unknown,token?:string)=>new Request('http://localhost/api/'+path,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined});
-test('structured posts reject fractional reps, invalid quantities and honeypots',()=>{
- assert(activity.safeParse({nickname:'Sam',exercise:'squat',quantity:10,unit:'reps'}).success);
- for(const override of [{quantity:1.5},{quantity:-1},{nickname:''},{website:'spam'},{unit:'kg'}])assert(!activity.safeParse({nickname:'Sam',exercise:'squat',quantity:10,unit:'reps',...override}).success);
+test('location requires an explicit bounded label or null',()=>{
+ for(const location of ['Oakland, CA',null])assert(profileUpdate.safeParse({location}).success);
+ for(const location of ['', ' ', 'x'.repeat(81), false])assert(!profileUpdate.safeParse({location}).success);
 });
 test('public and private lifecycle against isolated Postgres',{skip:!integration},async()=>{
  const sql=db();await sql.unsafe(await readFile(new URL('../db/001_activity.sql',import.meta.url),'utf8'));
  await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925175039_rfp_usage_guards.sql',import.meta.url),'utf8'));
+ await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925175420_rfp_runtime_role.sql',import.meta.url),'utf8'));
+ await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925222120_rfp_opt_in_location.sql',import.meta.url),'utf8'));
+ await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925222819_rfp_routine_progress.sql',import.meta.url),'utf8'));
  await sql`truncate reps.activities,reps.datasets,reps.subscribers,reps.rate_limits cascade`;
  const post={nickname:'Sam',exercise:'squats',quantity:20,unit:'reps',note:'<script>plain text only</script>'};
- let response=await handle(req('activity','POST',post));assert.equal(response.status,201);const created=await response.json();
+ let response=await handle(req('activity','POST',post));assert.equal(response.status,405);assert.equal(response.headers.get('allow'),'GET');
+ const deletionToken='legacy-delete-token';
+ const [legacy]=await sql`insert into reps.activities(nickname,exercise,quantity,unit,note,deletion_hash) values('Sam','squats',20,'reps',${post.note},${hash(deletionToken)}) returning id::text`;
+ const created={id:legacy.id,deletionToken};
  let feed=await (await handle(req('activity'))).json();assert.equal(feed.items.length,1);assert.equal(feed.items[0].note,post.note);assert(!('deletion_hash'in feed.items[0]));
  await handle(req(`activity/${created.id}/cheer`,'POST'));await handle(req(`activity/${created.id}/cheer`,'POST'));
  feed=await(await handle(req('activity'))).json();assert.equal(feed.items[0].cheers,1);
@@ -42,13 +48,70 @@ test('public and private lifecycle against isolated Postgres',{skip:!integration
  await sql`update reps.activities set created_at=now()-interval '2 hours'`;
  await handle(req('v1/sync','POST',{records:[]},uploader));assert.equal((await sql`select * from reps.activities`).length,10);
  await sql`delete from reps.tokens where hash=${hash(reader)}`;assert.equal((await handle(req('v1/history','GET',undefined,reader))).status,401);
- for(let i=0;i<10;i++)response=await handle(req('activity','POST',post));assert.equal(response.status,429);
- const csrf=new Request('http://localhost/api/activity',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify(post)});assert.equal((await handle(csrf)).status,403);
+ for(let i=0;i<6;i++)response=await handle(req('subscribe','POST',{email:'rate@example.com'}));assert.equal(response.status,429);
+ const csrf=new Request('http://localhost/api/subscribe',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({email:'csrf@example.com'})});assert.equal((await handle(csrf)).status,403);
  // Supabase anonymous roles have no schema access even if tables are discovered.
  const grants=await sql`select has_schema_privilege('public','reps','USAGE') allowed`;assert.equal(grants[0].allowed,false);
 });
+test('upload credentials control only their own profile and opt-in boundary',{skip:!integration},async()=>{
+ const sql=db();const token=randomBytes(32).toString('base64url'),reader=randomBytes(32).toString('base64url');
+ await sql`insert into reps.datasets(id,nickname) values('profile-owner','Before'),('profile-neighbor','Neighbor')`;
+ await sql`insert into reps.tokens(hash,dataset,scope) values(${hash(token)},'profile-owner','upload'),(${hash(reader)},'profile-owner','read')`;
+ assert.equal((await handle(req('v1/profile','POST',{nickname:'After'},reader))).status,403);
+ assert.equal((await handle(req('v1/profile','POST',{nickname:'',sharing:true},token))).status,400);
+ let r=await handle(req('v1/profile','POST',{nickname:'After',sharing:true},token));assert.equal(r.status,200);
+ const enabled=await r.json();assert.equal(enabled.nickname,'After');assert.equal(enabled.sharing,true);assert(enabled.publicAfter);
+ assert.equal((await sql`select nickname from reps.datasets where id='profile-neighbor'`)[0].nickname,'Neighbor');
+ await handle(req('v1/profile','POST',{nickname:'Renamed'},token));
+ const same=await(await handle(req('v1/profile','GET',undefined,token))).json();assert.equal(same.publicAfter,enabled.publicAfter);
+ await handle(req('v1/profile','POST',{sharing:false},token));
+ const record={id:'while-private',date:'2026-09-25',exercise:'squat',kind:'REP',reps:5,seconds:0,weight:0,verified:true,recordedAt:new Date().toISOString(),weightUnit:'lb'};
+ await handle(req('v1/sync','POST',{records:[record]},token));
+ assert.equal((await sql`select * from reps.activities where source_key='profile-owner:while-private'`).length,0);
+ await handle(req('v1/profile','POST',{sharing:true},token));
+ await handle(req('v1/sync','POST',{records:[]},token));
+ assert.equal((await sql`select * from reps.activities where source_key='profile-owner:while-private'`).length,0);
+});
+test('location snapshots and opt-out erase only the owning profile labels',{skip:!integration},async()=>{
+ const sql=db(),token=randomBytes(32).toString('base64url'),reader=randomBytes(32).toString('base64url');
+ await sql`insert into reps.datasets(id,nickname,autopost,public_after) values('loc_owner','Traveler',true,now()-interval '1 day'),('locXowner','Neighbor',true,now()-interval '1 day')`;
+ await sql`insert into reps.tokens(hash,dataset,scope) values(${hash(token)},'loc_owner','upload'),(${hash(reader)},'loc_owner','read')`;
+ const record=(id:string)=>({id,date:'2026-09-25',exercise:'squat',kind:'REP',reps:5,seconds:0,weight:0,verified:true,recordedAt:new Date().toISOString(),weightUnit:'lb'});
+ assert.equal((await(await handle(req('v1/profile','GET',undefined,token))).json()).location,null);
+ await handle(req('v1/sync','POST',{records:[record('unset')]},token));
+ assert.equal((await sql`select location from reps.activities where source_key='loc_owner:unset'`)[0].location,null);
+ assert.equal((await handle(req('v1/profile','POST',{location:'Denied'},reader))).status,403);
+ assert.equal((await handle(req('v1/profile','POST',{location:'Oakland, CA'},token))).status,200);
+ await handle(req('v1/sync','POST',{records:[record('oakland')]},token));
+ await handle(req('v1/profile','POST',{location:'Portland, OR'},token));
+ await handle(req('v1/sync','POST',{records:[record('portland')]},token));
+ assert.equal((await sql`select location from reps.activities where source_key='loc_owner:oakland'`)[0].location,'Oakland, CA');
+ assert.equal((await sql`select location from reps.activities where source_key='loc_owner:portland'`)[0].location,'Portland, OR');
+ await sql`insert into reps.activities(nickname,exercise,quantity,unit,deletion_hash,source_key,location) values('Neighbor','squat',5,'reps','x','locXowner:one','Keep me')`;
+ assert.equal((await handle(req('v1/profile','POST',{location:null},token))).status,200);
+ assert.equal((await sql`select * from reps.activities where left(source_key,10)='loc_owner:' and location is not null`).length,0);
+ assert.equal((await sql`select location from reps.activities where source_key='locXowner:one'`)[0].location,'Keep me');
+ await handle(req('v1/profile','POST',{location:'New city'},token));
+ assert.equal((await sql`select location from reps.activities where source_key='loc_owner:oakland'`)[0].location,null);
+ const response=await handle(req('activity'));assert.equal(response.headers.get('cache-control'),'no-store');
+ const feed=await response.json();assert.equal(feed.items.find((r:{nickname:string})=>r.nickname==='Traveler').location,null);
+});
+test('showcase exposes own-routine completion only for shared guest profiles',{skip:!integration},async()=>{
+ const sql=db(),token=randomBytes(32).toString('base64url'),today=new Date().toISOString().slice(0,10);
+ await sql`insert into reps.datasets(id,nickname,autopost,public_after) values('routine-guest','Routine guest',true,now()-interval '1 day')`;
+ await sql`insert into reps.tokens(hash,dataset,scope) values(${hash(token)},'routine-guest','upload')`;
+ const day={date:today,completed:2,target:4,updatedAt:new Date().toISOString()};
+ assert.equal((await handle(req('v1/sync','POST',{records:[],routineDays:[day]},token))).status,200);
+ const first=await(await handle(req('consistency'))).json();const person=first.entries.find((p:{nickname:string})=>p.nickname==='Routine guest');
+ assert.equal(person.latestPercent,50);assert.equal(person.heatmap.length,28);assert.equal(person.delta,null);assert(!('rank' in person));assert.equal(person.location,null);
+ assert.equal((await handle(req('v1/sync','POST',{records:[],routineDays:[{...day,completed:1,updatedAt:'2026-01-01T00:00:00Z'}]},token))).status,200);
+ assert.equal((await sql`select routine_days from reps.datasets where id='routine-guest'`)[0].routine_days[0].completed,2);
+ await handle(req('v1/profile','POST',{sharing:false},token));
+ assert(!(await(await handle(req('consistency'))).json()).entries.some((p:{nickname:string})=>p.nickname==='Routine guest'));
+});
 test('runtime role can serve RFP but cannot administer credentials or tables',{skip:!integration},async()=>{
  const sql=db();await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925175420_rfp_runtime_role.sql',import.meta.url),'utf8'));
+ await sql.unsafe(await readFile(new URL('../supabase/migrations/20260925215359_rfp_profile_settings.sql',import.meta.url),'utf8'));
  await sql.begin(async tx=>{
   await tx`set local role rfp_web`;
   assert.equal((await tx`select has_table_privilege(current_user,'reps.tokens','INSERT') allowed`)[0].allowed,false);
@@ -56,7 +119,7 @@ test('runtime role can serve RFP but cannot administer credentials or tables',{s
   assert.equal((await tx`select rolbypassrls from pg_roles where rolname=current_user`)[0].rolbypassrls,false);
   await tx`select reps.consume_budget()`;
   await tx`select id from reps.datasets where id='owner' for update`;
-  await tx`update reps.datasets set synced_at=now() where id='owner'`;
+  await tx`update reps.datasets set synced_at=now(),nickname='Role profile',autopost=true,public_after=now() where id='owner'`;
   await tx`select dataset,scope from reps.tokens limit 1`;
   const [post]=await tx`insert into reps.activities(nickname,exercise,quantity,unit,deletion_hash) values('Role test','squat',1,'reps','test') returning id`;
   await tx`insert into reps.cheers values(${post.id},'test')`;
@@ -64,6 +127,8 @@ test('runtime role can serve RFP but cannot administer credentials or tables',{s
   await tx`delete from reps.activities where id=${post.id}`;
   await tx`insert into reps.subscribers(email) values('role@example.com') on conflict do nothing`;
   await tx`update reps.workouts set posted=true where dataset='owner'`;
+  await tx`update reps.datasets set location=null,routine_days='[]'::jsonb where id='owner'`;
+  await tx`update reps.activities set location=null where source_key like 'owner:%'`;
  });
 });
 test('shared budgets and concurrent storage caps',{skip:!integration},async()=>{

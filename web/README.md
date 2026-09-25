@@ -104,3 +104,23 @@ projects, and exceeding them may interrupt service.
 These are conservative application guards, not guarantees of provider quota
 availability: rejected traffic, builds, database overhead, and other projects
 also consume resources. The providers' free plans prevent usage overage billing.
+
+## Desktop profiles and local endpoints
+
+`GET/POST /api/v1/profile` requires the dataset's upload token. POST accepts `nickname` (1–32 characters) and/or `sharing` (boolean). It cannot select a different dataset. Enabling sharing starts a new public boundary; workouts recorded while sharing was off remain private. Nickname-only changes retain the existing boundary and sharing setting. Apply `supabase/migrations/20260925215359_rfp_profile_settings.sql` after the runtime-role migration.
+
+The desktop's `rfp site --url URL --upload-token-file FILE --read-token-file FILE` selects a site and turns on sharing for a newly configured destination. `rfp profile` inspects or updates the site's profile. The daemon uses that endpoint automatically. Use an isolated database for local development; issue tokens for a local dataset with the operator commands above. Store only the raw `token` field in each mode-0600 token file. Once both destinations are configured, switch back using only `rfp site --url https://reps-for-prompts.vercel.app`.
+
+Run `TEST_DATABASE_URL=... pnpm exec tsx scripts/verify-profile-cli.ts` after the API tests and Rust release build to verify two real HTTP destinations, profile names, default sharing, independent acknowledgments, and retry deduplication. Tests use disposable dataset credentials and never send requests to the production site.
+
+## Guest consistency showcase
+
+The homepage is a viewport-sized two-column one-pager: an explanation and GitHub link on the left, guest routine heatmaps on the right. No public workout-entry form or ranking. Anonymous `POST /api/activity` returns 405; authenticated sync creates posts. Legacy post deletion remains supported.
+
+`GET /api/consistency` returns at most 24 sharing-enabled guests, their optional location, 28 date cells, latest routine percentage and a percentage-point delta comparing tracked days in the previous two completed seven-day windows. It never treats missing days as failures or invents past routine targets. Guests appear by recent sync, not score. Location defaults to null; `rfp profile --location "City, Region"` opts in, and `--clear-location` clears both the profile and past post labels transactionally. The feed and showcase are no-store so cleared location cannot persist in shared CDN caches.
+
+Sync accepts optional `routineDays` (up to 28 date/completed/target/updatedAt snapshots). The desktop records targets as the routine runs, including later target changes; server merges retain the latest snapshot per date, bounded to 28 entries per dataset. Routine snapshots are private when public sharing is off. No new accounts or verification machinery.
+
+The page refreshes every 90 seconds only while visible and online; failures back off and 429 waits an hour. Auto-scroll pauses on hover, focus, user pause, hidden page, and reduced-motion preference. If fewer than four real guests are present, deterministic demo profiles fill the remaining slots. Every demo is labeled and exists only in the browser; none enters the database, feed, or real metrics.
+
+Apply `20260925222120_rfp_opt_in_location.sql` and `20260925222819_rfp_routine_progress.sql` before deploying this version. They add nullable location labels and bounded routine snapshots, with column-scoped runtime grants only.

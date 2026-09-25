@@ -311,3 +311,5 @@ body {
 .workout-control button:disabled { opacity: .6; cursor: wait; }
 .workout-control button:focus-visible, .workout-control input:focus-visible { outline: 3px solid var(--go); outline-offset: 3px; }
 .workout-control > .small { flex-basis: 100%; }
+
+.remaining-sets { display: flex; flex-direction: column; align-items: center; gap: .5vh; }

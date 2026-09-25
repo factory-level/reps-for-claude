@@ -60,10 +60,11 @@ function PrimaryStatus({ snapshot, fallback, debug }: { snapshot: Snapshot; fall
           <span className="medium">
             {label} · {Math.floor(snapshot.progress?.value ?? 0)} / {target} {reps ? "reps" : "sec"}
           </span>
-          <div className="lockrow">
-
-            <span className="big">{debt ?? "!"}</span>
-          </div>
+          {debt !== null && <div className="remaining-sets">
+            <span className="big">{debt}</span>
+            <span className="small">{debt === 1 ? "set" : "sets"} left today</span>
+            <span className="small">Including this set · {snapshot.day!.setsDone} of {snapshot.day!.setsTotal} complete</span>
+          </div>}
           <span className="small">{fallback ? "Camera down · finish via rfp finish --honor" : debug ? "Test progress · not saved to your workouts" : "A little movement between prompts"}</span>
         </>
       );
