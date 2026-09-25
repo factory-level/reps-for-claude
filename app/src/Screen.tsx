@@ -1,9 +1,6 @@
-// The one screen, two flavours. Both windows render the same three bands —
-// title / character / status — from the same snapshot; only the status band
-// differs: the primary monitor shows the padlock + debt (and takes the weight
-// and the escape keys), the gym display shows the live count.
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Snapshot } from "./snapshot";
 
 export type Variant = "primary" | "gym";
@@ -15,16 +12,41 @@ export const mmss = (s: number) =>
 export const debtOf = (snapshot: Snapshot): number | null =>
   snapshot.day ? snapshot.day.setsTotal - snapshot.day.setsDone : null;
 
+function WorkoutControl({ initial }: { initial?: number }) {
+ const [weight,setWeight]=useState(String(initial ?? 0));
+ const [pending,setPending]=useState(false);
+ const [error,setError]=useState<string|null>(null);
+ const busy=useRef(false);
+ const finishing=initial!==undefined;
+ async function submit(){
+  if(busy.current)return;
+  const value=Number(weight);
+  if(finishing&&(!weight.trim()||!Number.isFinite(value)||value<0||value>100000)){
+   setError("Enter a weight from 0 to 100000 lb.");return;
+  }
+  busy.current=true;setPending(true);setError(null);
+  try{await invoke("workout_action",{action:finishing?"finish":"start",weight:finishing?value:null});}
+  catch(e){setError(String(e));}
+  finally{busy.current=false;setPending(false);}
+ }
+ return <form className="workout-control" onSubmit={e=>{e.preventDefault();void submit();}}>
+  {finishing&&<label>Weight (lb)<input className="weight" type="number" min="0" max="100000" step="any" required value={weight} disabled={pending} onChange={e=>setWeight(e.target.value)}/></label>}
+  <button type="submit" disabled={pending}>{pending?"Working…":finishing?"Log weight":"Start workout"}</button>
+  <span className="small">{finishing?`rfp finish --weight ${weight || 0}`:"rfp start"}</span>
+  {error&&<span className="small" role="alert">{error}</span>}
+ </form>;
+}
+
 function WeightEntry({ initial }: { initial: number }) {
- return <><span className="medium">Set complete</span><span className="small">Log from your terminal</span><span className="small">rfp finish --weight {initial}</span></>;
+ return <><span className="medium">Set complete</span><WorkoutControl initial={initial}/></>;
 }
 
 function PrimaryStatus({ snapshot, fallback, debug }: { snapshot: Snapshot; fallback: boolean; debug: boolean }) {
   switch (snapshot.phase) {
     case "CODING":
-      return <span className="small">{debug ? "Idle · start a test when you’re ready" : `Next workout in ${mmss(snapshot.remainingSeconds)}`}</span>;
+      return <><span className="small">{debug ? "Idle · start a test when you’re ready" : `Next workout in ${mmss(snapshot.remainingSeconds)}`}</span>{!debug&&!snapshot.day?.complete&&<WorkoutControl/>}</>;
     case "EXERCISE_REQUIRED":
-      return <span className="small">Time for a little movement · start when ready: rfp start</span>;
+      return <><span className="small">Time for a little movement · start when ready</span>{!debug&&<WorkoutControl/>}</>;
     case "WEIGHT_CONFIRMATION":
       return <WeightEntry key={snapshot.prescription?.exercise} initial={snapshot.prescription?.defaultWeight ?? 0} />;
     default: {

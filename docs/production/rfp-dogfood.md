@@ -294,3 +294,7 @@ rfp service logs
 ```
 
 When a break is due, the daemon shows the WORKOUT display and sends a desktop notification asking you to run `rfp start`. The camera remains off until that command. From 5 PM local time (6 PM workday end minus 60 minutes), it also warns if routine sets remain. A late login catches up the warning. The warning respects snooze, camera preview, Debug mode and active workouts; it waits for a coding agent to be open. It is recorded in SQLite at most once per local date across restarts and shown in the passive display and inspection output. It never marks a workout complete or posts a workout by itself. Notification delivery may be hidden by desktop Do Not Disturb; the display and daemon log remain available.
+
+## Minimal on-screen workout controls
+
+The primary CODE/WORKOUT screen also offers **Start workout** (equivalent to `rfp start`) and, when a set is complete, a **Weight (lb)** field with **Log weight** (equivalent to `rfp finish --weight N`). Both use the CLI's validated action handlers. Gym displays remain passive. Routines, modes, camera previews, snooze, cancellation, and service management stay in the CLI.

@@ -122,6 +122,16 @@ fn dispatch(app:&AppHandle, command:Command)->Result<serde_json::Value,String>{
  let snapshot=app.state::<SharedCore>().lock().unwrap().session.snapshot(SystemClock.now());
  Ok(serde_json::json!({"schemaVersion":1,"source":"local","pid":std::process::id(),"mode":app.state::<Runtime>().mode,"sessionHome":app.state::<Runtime>().session_home,"display":get_display_state(app.clone()),"snapshot":snapshot,"settings":daily::daily_status(app.clone())}))
 }
+/// The display exposes only the two actions also available through the CLI.
+#[tauri::command]
+pub fn workout_action(app:AppHandle, action:String, weight:Option<f64>)->Result<serde_json::Value,String>{
+ let command=match action.as_str(){
+  "start"=>Command::Start,
+  "finish"=>Command::Finish{weight:weight.ok_or("Enter a weight")?,honor:false},
+  _=>return Err("Use the CLI for this action".into()),
+ };
+ dispatch(&app,command)
+}
 pub fn start(app:&AppHandle)->Result<(),String>{
  #[cfg(unix)] {
   use std::{os::unix::{net::UnixListener,fs::PermissionsExt,io::AsRawFd},io::{BufRead,BufReader,Read,Write},time::Duration};

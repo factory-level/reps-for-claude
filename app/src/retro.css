@@ -303,3 +303,11 @@ body {
 .passive-preview p{margin:5px}.cli-caption{font-family:monospace;font-size:14px;opacity:.8}
 
 .day-warning { position: fixed; top: 12px; left: 5%; right: 5%; z-index: 10; padding: 12px 20px; border: 3px solid #35223c; border-radius: 12px; background: #ffcd85; color: #35223c; font-size: 18px; text-align: center; pointer-events: none; }
+
+.workout-control { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; }
+.workout-control label { display: flex; gap: 10px; align-items: center; }
+.workout-control .weight { width: 110px; font-size: 28px; }
+.workout-control button { padding: 10px 22px; border: 3px solid var(--ink); border-radius: 12px; background: var(--ivory); color: var(--ink); font: inherit; font-weight: 800; cursor: pointer; box-shadow: 3px 3px 0 var(--ink); }
+.workout-control button:disabled { opacity: .6; cursor: wait; }
+.workout-control button:focus-visible, .workout-control input:focus-visible { outline: 3px solid var(--go); outline-offset: 3px; }
+.workout-control > .small { flex-basis: 100%; }

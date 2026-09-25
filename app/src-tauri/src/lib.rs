@@ -679,6 +679,7 @@ pub fn run() {
             daily::save_routine,
             daily::share_workout,
             daily::reminder_action,
+            control::workout_action,
             daily::save_daily_settings,
             hub::get_camera_settings,
             hub::save_camera_settings,

@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Screen } from "./Screen";
 import type { Snapshot } from "./snapshot";
 
@@ -62,4 +63,36 @@ it("Debug test progress never claims the screen is locked", () => {
   expect(screen.getByText("TEST WORKOUT")).toBeInTheDocument();
   expect(screen.queryByRole("img", { name: "locked" })).not.toBeInTheDocument();
   expect(screen.getByText(/not saved to your workouts/)).toBeInTheDocument();
+});
+
+beforeEach(()=>{vi.mocked(invoke).mockReset();});
+it("starts through the shared CLI action and prevents duplicate submissions",async()=>{
+ let finish!:()=>void;
+ vi.mocked(invoke).mockImplementation(()=>new Promise<void>(resolve=>{finish=resolve;}));
+ render(<Screen snapshot={base} variant="primary"/>);
+ const button=screen.getByRole('button',{name:'Start workout'});
+ fireEvent.click(button);fireEvent.click(button);
+ expect(invoke).toHaveBeenCalledTimes(1);
+ expect(invoke).toHaveBeenCalledWith('workout_action',{action:'start',weight:null});
+ expect(button).toBeDisabled();finish();
+ await waitFor(()=>expect(button).toBeEnabled());
+});
+it("logs fractional weight using the shared finish action",async()=>{
+ vi.mocked(invoke).mockResolvedValue({});
+ render(<Screen snapshot={{...base,phase:'WEIGHT_CONFIRMATION',prescription:{exercise:'squat',kind:'REP',targetReps:5,targetSeconds:0,defaultWeight:45}}} variant="primary"/>);
+ fireEvent.change(screen.getByLabelText('Weight (lb)'),{target:{value:'47.5'}});
+ fireEvent.click(screen.getByRole('button',{name:'Log weight'}));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith('workout_action',{action:'finish',weight:47.5}));
+});
+it("shows action failures so a failed save is not presented as logged",async()=>{
+ vi.mocked(invoke).mockRejectedValue('Set is not complete');
+ render(<Screen snapshot={{...base,phase:'WEIGHT_CONFIRMATION'}} variant="primary"/>);
+ fireEvent.click(screen.getByRole('button',{name:'Log weight'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Set is not complete');
+});
+it("keeps gym screens and completed routines free of start controls",()=>{
+ const {rerender}=render(<Screen snapshot={base} variant="gym"/>);
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();
+ rerender(<Screen snapshot={{...base,day:{...base.day!,complete:true}}} variant="primary"/>);
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
