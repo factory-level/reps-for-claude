@@ -11,6 +11,8 @@ pub struct Store {
 }
 
 const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS routine_days (date TEXT PRIMARY KEY, completed INTEGER NOT NULL, target INTEGER NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS destination_uploads (destination TEXT NOT NULL, public_id TEXT NOT NULL, PRIMARY KEY(destination,public_id));
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS rotation (
@@ -99,6 +101,25 @@ impl Store {
             sequence: r.get(0)?, id:r.get(1)?, date:r.get(2)?, exercise:r.get(3)?, kind:kind_from_str(&r.get::<_,String>(4)?),reps:r.get(5)?,seconds:r.get(6)?,weight:r.get(7)?,verified:r.get(8)?,recorded_at:r.get(9)?,weight_unit:r.get(10)?
         }))?.collect();
         rows
+    }
+
+    pub fn record_routine_day(&self,date:&str,completed:u32,target:u32)->rusqlite::Result<()> {
+        if target==0{return Ok(());}
+        self.conn.execute("INSERT INTO routine_days(date,completed,target,updated_at) VALUES(?1,?2,?3,?4) ON CONFLICT(date) DO UPDATE SET completed=excluded.completed,target=excluded.target,updated_at=excluded.updated_at WHERE completed!=excluded.completed OR target!=excluded.target",params![date,completed,target,chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)])?;Ok(())
+    }
+    pub fn routine_days(&self)->rusqlite::Result<Vec<serde_json::Value>> {
+        let mut q=self.conn.prepare("SELECT date,completed,target,updated_at FROM routine_days ORDER BY date DESC LIMIT 28")?;
+        let rows=q.query_map([],|r|Ok(serde_json::json!({"date":r.get::<_,String>(0)?,"completed":r.get::<_,u32>(1)?,"target":r.get::<_,u32>(2)?,"updatedAt":r.get::<_,String>(3)?})))?.collect();rows
+    }
+
+    pub fn pending_for_destination(&self, destination:&str, limit:u32)->rusqlite::Result<Vec<crate::history::HistoryRecord>> {
+        let mut stmt=self.conn.prepare("SELECT id,public_id,date,exercise,kind,reps,seconds,weight,verified,recorded_at,weight_unit FROM exercise_history h WHERE NOT EXISTS (SELECT 1 FROM destination_uploads d WHERE d.destination=?1 AND d.public_id=h.public_id) ORDER BY id ASC LIMIT ?2")?;
+        let rows=stmt.query_map(params![destination,limit],|r|Ok(crate::history::HistoryRecord{sequence:r.get(0)?,id:r.get(1)?,date:r.get(2)?,exercise:r.get(3)?,kind:kind_from_str(&r.get::<_,String>(4)?),reps:r.get(5)?,seconds:r.get(6)?,weight:r.get(7)?,verified:r.get(8)?,recorded_at:r.get(9)?,weight_unit:r.get(10)?}))?.collect();rows
+    }
+    pub fn acknowledge_destination(&self,destination:&str,ids:&[String])->rusqlite::Result<()> {
+        let tx=self.conn.unchecked_transaction()?;
+        for id in ids {tx.execute("INSERT OR IGNORE INTO destination_uploads(destination,public_id) VALUES(?1,?2)",params![destination,id])?;}
+        tx.commit()
     }
 
     pub fn summary(&self, from: Option<&str>, to: Option<&str>) -> rusqlite::Result<serde_json::Value> {

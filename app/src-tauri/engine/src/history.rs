@@ -16,6 +16,15 @@ pub struct HistoryRecord {
   let ro=Store::open_readonly(&path).unwrap();let r=ro.records(None,None,0,10,false).unwrap();
   assert_eq!(r.len(),1);assert!(r[0].recorded_at.is_some());
   assert_eq!(ro.records(Some("2026-09-25"),None,0,10,false).unwrap().len(),0);
+  s.record_routine_day("2026-09-24",1,4).unwrap();
+  let days=s.routine_days().unwrap();assert_eq!(days[0]["completed"],1);assert_eq!(days[0]["target"],4);
+  s.record_routine_day("2026-09-24",1,4).unwrap();assert_eq!(s.routine_days().unwrap(),days);
+  s.record_routine_day("2026-09-24",2,4).unwrap();assert_eq!(s.routine_days().unwrap()[0]["completed"],2);
+  s.acknowledge_destination("local",&[r[0].id.clone()]).unwrap();
+  assert!(s.pending_for_destination("local",100).unwrap().is_empty());
+  assert_eq!(s.pending_for_destination("production",100).unwrap().len(),1);
+  s.acknowledge_destination("production",&[r[0].id.clone()]).unwrap();
+  assert!(s.pending_for_destination("production",100).unwrap().is_empty());
   s.acknowledge(&[r[0].id.clone()]).unwrap();assert!(s.records(None,None,0,10,true).unwrap().is_empty());
   assert!(ro.record_set(&SetRecord{date:"today".into(),exercise:"x".into(),kind:ExerciseKind::Rep,reps:1,seconds:0.,weight:0.,verified:false}).is_err());
  }

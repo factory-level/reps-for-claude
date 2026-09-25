@@ -141,6 +141,8 @@ pub(crate) fn persist_and_snapshot(core: &mut Core) -> Snapshot {
     }
     // Persist the daily-plan completion so today's progress survives a restart.
     if let Some(plan) = core.session.plan() {
+        let day=plan.to_day_plan();
+        if let Err(error)=core.store.record_routine_day(plan.date(),day.sets_done,day.sets_total){eprintln!("Could not save routine progress: {error}");}
         let ps = PlanState { date: plan.date().to_string(), done: plan.done_state() };
         if let Ok(json) = serde_json::to_string(&ps) {
             if let Err(e) = core.store.set_setting("plan_state", &json) {
@@ -718,7 +720,7 @@ pub fn run() {
                 std::thread::spawn(move || {
                     let mut delay = 300u64;
                     while !handle.state::<Runtime>().is_stopping() {
-                        if home.join("upload.json").exists() {
+                        if home.join("upload.json").exists() || home.join("sites.json").exists() {
                             if let Err(error) = reps_cli::sync(&home) {
                                 let state = handle.state::<SharedCore>();
                                 let _ = state.lock().unwrap().store.set_setting("sync_status", &error);
@@ -764,6 +766,7 @@ pub fn run() {
                     }
                     let can_remind = daily.agents.active() && daily.snooze_until <= now && !control::preview_only(&handle);
                     drop(daily);
+                    if poll_due {if let Some(plan)=core.session.plan(){let day=plan.to_day_plan();let _=core.store.record_routine_day(plan.date(),day.sets_done,day.sets_total);}}
                     let before = core.session.snapshot(now);
                     let remaining = before.day.as_ref().map(|d|d.sets_total.saturating_sub(d.sets_done)).unwrap_or(0);
                     let end = reps_cli::workday::parse_time(&core.store.setting("workday_end","18:00")).unwrap_or(1080);

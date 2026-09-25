@@ -298,3 +298,31 @@ When a break is due, the daemon shows the WORKOUT display and sends a desktop no
 ## Minimal on-screen workout controls
 
 The primary CODE/WORKOUT screen also offers **Start workout** (equivalent to `rfp start`) and, when a set is complete, a **Weight (lb)** field with **Log weight** (equivalent to `rfp finish --weight N`). Both use the CLI's validated action handlers. Gym displays remain passive. Routines, modes, camera previews, snooze, cancellation, and service management stay in the CLI.
+
+## Profile, automatic sharing, and selectable sites
+
+Completed real workouts upload automatically every five minutes, with failure backoff up to an hour. Public sharing is on by default when configuring a new destination. Debug results stay isolated. A profile is a nickname plus sharing preferences for an upload credential, not a website account.
+
+```sh
+rfp site                                      # active endpoint, credential presence; no secrets
+rfp profile                                   # nickname, sharing, last sync, public boundary
+rfp profile --nickname "Your nickname"
+rfp profile --sharing off                     # private sync continues; no public posts
+rfp profile --sharing on                      # share future results; no private-period backfill
+rfp site --url http://localhost:3000 --upload-token-file /path/local-upload.token --read-token-file /path/local-read.token
+rfp site --url https://reps-for-prompts.vercel.app   # restores saved live credentials
+rfp sync                                      # explicit immediate retry, subject to server limits
+```
+
+Token files must contain the raw issued token and be mode 0600. New endpoints require their own upload credential; existing credentials are never copied to a new host. Site origins allow HTTPS, or HTTP only on loopback. Credentials are kept in mode-0600 `sites.json`; legacy upload/read configs are imported on first configuration. Reads, manual sync and the daemon all use the selected endpoint. The daemon notices changes on its next scheduled upload without a restart. Acknowledgments are scoped to endpoint and credential, so testing locally cannot consume the production upload queue. Switching to an existing site preserves its sharing setting. Switching to a new site enables sharing from that moment, while older records may be synced privately. Existing installations retain their current server profile and sharing settings.
+
+Use a separate local database and locally issued dataset tokens when testing. A localhost web server connected to the production database is still production data. Apply `20260925215359_rfp_profile_settings.sql` after the runtime-role migration to allow the upload-authenticated profile API to update its three preference columns. Public posting remains limited to six sets per dataset per hour, with queued posts drained on later syncs.
+
+## Location and relative routine progress
+
+```sh
+rfp profile --location "Oakland, CA"  # explicitly publish this label
+rfp profile --clear-location         # remove it from profile and all past posts
+```
+
+Location is unset by default and never detected automatically. Each site has its own profile. Completed/target daily routine snapshots sync with workouts; the showcase colors each day by that guest's own completion percentage. Tracking begins when this version runs, with no invented historical goals. Missing days remain untracked. The site is now a short GitHub-linked explanation beside rotating guest heatmaps; labeled demo profiles fill empty spaces without database writes.

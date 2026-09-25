@@ -120,7 +120,7 @@ fn dispatch(app:&AppHandle, command:Command)->Result<serde_json::Value,String>{
   Command::Hide=>{if app.state::<Runtime>().enforces_windows(){return Err("Disable lock mode before hiding screens: reps settings --lock-mode off".into());}for w in app.webview_windows().values(){let _=w.hide();}},
  }
  let snapshot=app.state::<SharedCore>().lock().unwrap().session.snapshot(SystemClock.now());
- Ok(serde_json::json!({"schemaVersion":1,"source":"local","pid":std::process::id(),"mode":app.state::<Runtime>().mode,"sessionHome":app.state::<Runtime>().session_home,"display":get_display_state(app.clone()),"snapshot":snapshot,"settings":daily::daily_status(app.clone())}))
+ Ok(serde_json::json!({"schemaVersion":1,"source":"local","capabilities":{"siteProfiles":true},"pid":std::process::id(),"mode":app.state::<Runtime>().mode,"sessionHome":app.state::<Runtime>().session_home,"display":get_display_state(app.clone()),"snapshot":snapshot,"settings":daily::daily_status(app.clone())}))
 }
 /// The display exposes only the two actions also available through the CLI.
 #[tauri::command]
