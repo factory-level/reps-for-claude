@@ -40,7 +40,7 @@ class VideoRepCounter(RepCounter):
 
     name = "video"
 
-    WINDOW = "reps-for-claude"
+    WINDOW = "rfp"
 
     def __init__(
         self,

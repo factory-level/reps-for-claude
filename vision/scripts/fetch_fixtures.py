@@ -83,7 +83,7 @@ def main() -> None:
         else:
             print(f"downloading {clip['file']} ...")
             req = urllib.request.Request(
-                clip["url"], headers={"User-Agent": "reps-for-claude/0.1 test fixtures"}
+                clip["url"], headers={"User-Agent": "rfp/0.1 test fixtures"}
             )
             for attempt in range(5):
                 try:

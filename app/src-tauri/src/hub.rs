@@ -1,4 +1,4 @@
-//! Vision-hub integration: reps-for-claude declares its model and workout
+//! Vision-hub integration: RFP declares its model and workout
 //! configs (resources/exercise_specs.json) and drives the bundled hub via
 //! the `VisionHub` trait — enable metric on workout start, pump events into
 //! the session, disable on completion. Honor-mode fallback when the hub is
@@ -488,7 +488,7 @@ pub fn start(app: AppHandle) {
                 HubSupervisorConfig::dev(&repo_root)
             } else {
                 match app.path().resource_dir() {
-                    Ok(resources) => HubSupervisorConfig::bundled(&resources, &resources.join("reps-vision")),
+                    Ok(resources) => HubSupervisorConfig::bundled(&resources, &resources.join("reps-vision"), &crate::dirs_next_data_dir()),
                     Err(err) => {
                         let _ = app.emit("vision-fallback", serde_json::json!({"reason": err.to_string()}));
                         return;

@@ -29,7 +29,7 @@ Existing shipped exercises remain available through their legacy presets until
 a passing version is activated. No accuracy claim is made for those presets.
 Custom movement IDs can also be prescribed by the desktop without adding code.
 Create `routine.json` in the app data directory (by default
-`~/.local/share/reps-for-claude`, or the directory selected by `REPS_APP_HOME`),
+`~/.local/share/rfp`, or the directory selected by `REPS_APP_HOME`),
 then restart the app. For example:
 
 ```json

@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in RFP does not work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before filing a detection bug:** if the app simply never counts
+        anything, run `./scripts/free-hub.sh` and relaunch. A leaked `hubd`
+        holding port 8443 makes the app degrade silently to honor mode, and
+        that is the cause most of the time.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. rfp start
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - Desktop app (timer, lock screen, windows)
+        - Rep counting / camera / vision
+        - rfp CLI
+        - Background service / startup
+        - Activity site (web)
+        - Docs
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Distro and desktop session, `rfp status --json`, camera model.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`rfp service logs`, or the console output from `pnpm tauri dev`."
+      render: shell

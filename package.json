@@ -1,5 +1,5 @@
 {
-  "name": "reps-for-claude",
+  "name": "reps-for-prompts",
   "private": true,
   "description": "Root passthrough — the Tauri app lives in app/. These scripts forward there so you can run from the repo root.",
   "scripts": {

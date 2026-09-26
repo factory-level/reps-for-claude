@@ -1,6 +1,6 @@
 # Saved progress and backups
 
-The default data directory is `~/.local/share/reps-for-claude`.
+The default data directory is `~/.local/share/rfp`.
 `REPS_APP_HOME` can select another directory.
 
 | File | Contents |
