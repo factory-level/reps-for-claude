@@ -46,13 +46,43 @@ pub fn excluded_elapsed(elapsed: f64, active: bool, snoozed: bool) -> f64 {
     if !active || snoozed || elapsed > 5.0 { elapsed.max(0.0) } else { 0.0 }
 }
 
+/// The one definition of where our state lives: `~/.local/share/rfp`.
+/// Migrates a pre-rebrand `reps-for-claude/` directory on first use. The rename
+/// is atomic and carries history, mode and the nested `vision-env/` across
+/// together; doing it here rather than at startup means no caller can race it.
 pub fn app_home() -> std::path::PathBuf {
-    std::env::var_os("REPS_APP_HOME").map(Into::into).unwrap_or_else(||
-        Path::new(&std::env::var_os("HOME").unwrap_or_default()).join(".local/share/reps-for-claude"))
+    if let Some(home) = std::env::var_os("REPS_APP_HOME") { return home.into(); }
+    home_in(&Path::new(&std::env::var_os("HOME").unwrap_or_default()).join(".local/share"))
+}
+
+fn home_in(share: &Path) -> std::path::PathBuf {
+    let (dir, legacy) = (share.join("rfp"), share.join("reps-for-claude"));
+    if !dir.exists() && legacy.is_dir() { let _ = std::fs::rename(&legacy, &dir); }
+    dir
 }
 
 #[cfg(test)] mod tests {
     use super::*;
+
+    #[test] fn migrates_pre_rebrand_home_once() {
+        let tmp = tempfile::tempdir().unwrap(); let share = tmp.path();
+        let legacy = share.join("reps-for-claude");
+        std::fs::create_dir_all(legacy.join("vision-env")).unwrap();
+        std::fs::write(legacy.join("reps.sqlite"), b"history").unwrap();
+
+        let home = home_in(share);
+        assert_eq!(home, share.join("rfp"));
+        assert_eq!(std::fs::read(home.join("reps.sqlite")).unwrap(), b"history");
+        assert!(home.join("vision-env").is_dir(), "nested env must come across");
+        assert!(!legacy.exists(), "legacy directory must not linger");
+
+        // Idempotent, and a later legacy directory never overwrites live history.
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("reps.sqlite"), b"stale").unwrap();
+        assert_eq!(home_in(share), share.join("rfp"));
+        assert_eq!(std::fs::read(home.join("reps.sqlite")).unwrap(), b"history");
+    }
+
     #[test] fn exact_names_only() {
         assert!(identify("codex", None).codex);
         assert!(identify("claude", None).claude);

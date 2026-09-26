@@ -1,5 +1,5 @@
 /* 16-bit workout OS. Two modes, one composition: title / character / status.
-   CODE = daytime sky + wood; WORKOUT = claude.ai ivory + Claude orange.
+   CODE = daytime sky + wood; WORKOUT = warm ivory + the RFP orange.
    Pixel rules: no blur, no radius, hard drop-shadows, `pixelated` sprites. */
 
 /* Baloo 2: round, chunky, bubbly — one variable family for everything. */
@@ -10,8 +10,8 @@
   font-display: block;
 }
 :root {
-  --clawd: #da7756;
-  --clawd-deep: #b85c3c;
+  --orange: #da7756;
+  --orange-deep: #b85c3c;
   --ivory: #faf9f5;
   --manilla: #ebdbbc;
   --sky: #85e1f5;
@@ -66,7 +66,7 @@ body {
 }
 .stage.workout {
   --bg-color: var(--ivory);
-  --accent: var(--clawd);
+  --accent: var(--orange);
 }
 
 /* Title on a rounded ivory plate so it reads over any scene. */
@@ -92,7 +92,7 @@ body {
   --title: #2f8fd0; /* deep sky: --sky itself is too pale on ivory */
 }
 .stage.workout {
-  --title: var(--clawd);
+  --title: var(--orange);
 }
 @keyframes bob {
   from { transform: translateY(0); }
@@ -134,14 +134,14 @@ body {
   font-size: 16vh;
   font-weight: 800;
   line-height: 1;
-  color: var(--clawd);
+  color: var(--orange);
   text-shadow: 0.04em 0.04em 0 var(--ink);
 }
 .medium {
   font-size: 6vh;
   font-weight: 700;
   line-height: 1.2;
-  color: var(--clawd);
+  color: var(--orange);
   text-shadow: 0.04em 0.04em 0 var(--ink);
 }
 .small {
@@ -222,7 +222,7 @@ body {
   cursor: pointer;
 }
 .debug-toggle button.on {
-  background: var(--clawd);
+  background: var(--orange);
   color: var(--ink);
 }
 .debug-host {
@@ -256,7 +256,7 @@ body {
   min-height: 36px; padding: 6px 12px; cursor: pointer;
 }
 .app-mode-bar button { background: var(--ivory); color: var(--ink); border: 2px solid var(--ivory); }
-.app-mode-bar button[aria-pressed="true"] { background: var(--clawd); }
+.app-mode-bar button[aria-pressed="true"] { background: var(--orange); }
 .app-mode-bar button:disabled { opacity: .65; cursor: wait; }
 .app-mode-bar [role="group"] { display: flex; gap: 6px; }
 .app-mode-bar small { opacity: .85; }
@@ -296,7 +296,7 @@ body {
 /* CLI-owned displays: no forms, toolbars, menus, or clickable controls. */
 .passive-app{height:100%;overflow:hidden}.passive-app .stage,.passive-app .takeover{height:100%;min-height:0}
 .passive-preview{height:100%;display:flex;flex-direction:column;align-items:center;background:var(--ivory);padding:20px;text-align:center;overflow:hidden}
-.passive-preview h1{font-size:clamp(28px,5vh,54px);margin:0;color:var(--clawd);text-shadow:2px 2px var(--ink)}
+.passive-preview h1{font-size:clamp(28px,5vh,54px);margin:0;color:var(--orange);text-shadow:2px 2px var(--ink)}
 .preview-frames{display:flex;gap:16px;flex:1;min-height:0;max-width:100%;width:100%;align-items:center;justify-content:center}
 .preview-frames figure{margin:0;min-width:0;height:100%;flex:1;display:flex;flex-direction:column;justify-content:center}
 .preview-frames img{max-height:calc(100% - 28px);width:100%;object-fit:contain;min-height:0}.preview-frames figcaption{font-size:16px}

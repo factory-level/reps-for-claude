@@ -2,7 +2,7 @@
 
 ## Launch when ready
 
-From `reps-for-claude/`:
+From `reps-for-prompts/`:
 
 ```sh
 bash scripts/capture-studio.sh --check

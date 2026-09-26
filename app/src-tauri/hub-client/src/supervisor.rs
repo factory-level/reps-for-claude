@@ -58,12 +58,11 @@ pub struct HubSupervisorConfig {
 impl HubSupervisorConfig {
     /// Production: the staged bundle under the app's resources dir
     /// (hub-bundle/hubd.mjs + public/ + vision/), reps plugin loaded from
-    /// `plugin_src` (the shipped reps_vision sources).
-    pub fn bundled(resources_dir: &std::path::Path, plugin_src: &std::path::Path) -> Self {
+    /// `plugin_src` (the shipped reps_vision sources). `app_home` is the caller's
+    /// data directory; the provisioned Python env lives at `<app_home>/vision-env`.
+    pub fn bundled(resources_dir: &std::path::Path, plugin_src: &std::path::Path, app_home: &std::path::Path) -> Self {
         let bundle = resources_dir.join("hub-bundle");
-        let data_home = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share"));
-        let python_env = std::env::var("UV_PROJECT_ENVIRONMENT").unwrap_or_else(|_| data_home.join("reps-for-claude/vision-env").display().to_string());
+        let python_env = std::env::var("UV_PROJECT_ENVIRONMENT").unwrap_or_else(|_| app_home.join("vision-env").display().to_string());
         HubSupervisorConfig {
             hub_dir: bundle.clone(),
             command: vec![

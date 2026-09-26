@@ -10,4 +10,4 @@ def cache_dir() -> Path:
     home = os.environ.get("REPS_HOME")
     if home:
         return Path(home) / "cache"
-    return Path.home() / ".cache" / "reps-for-claude"
+    return Path.home() / ".cache" / "rfp"

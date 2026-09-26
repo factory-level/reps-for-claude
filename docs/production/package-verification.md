@@ -3,6 +3,11 @@
 Verified on Linux Mint 22.3, amd64, 2026-09-15 UTC. This is an unpublished
 development artifact from modified worktrees, not a qualified gym release.
 
+> **Pre-rebrand record.** This run predates the rename to RFP, so its paths
+> read `Reps for Claude`. Current builds produce `RFP_0.1.0_amd64.deb` and
+> install to `/usr/lib/RFP`. The names below are left as recorded; the
+> sizes and hashes belong to that artifact.
+
 ## Artifact
 
 Build command from `app/`:

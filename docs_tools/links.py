@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 
 REPOSITORIES = {
-    "reps-for-claude": "https://github.com/factory-level/reps-for-claude",
+    "reps-for-prompts": "https://github.com/factory-level/reps-for-prompts",
     "usb-mcp-hub": "https://github.com/factory-level/usb-mcp-hub",
 }
 

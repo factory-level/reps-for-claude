@@ -50,7 +50,7 @@ pub fn check_runtime() -> Result<serde_json::Value, String> {
     let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
     let resources = tauri::utils::platform::resource_dir(context.package_info(), &tauri::utils::Env::default())
         .map_err(|e| e.to_string())?;
-    let mut config = HubSupervisorConfig::bundled(&resources, &resources.join("reps-vision"));
+    let mut config = HubSupervisorConfig::bundled(&resources, &resources.join("reps-vision"), &dirs_next_data_dir());
     let data = std::env::temp_dir().join(format!("reps-runtime-check-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&data).map_err(|e| e.to_string())?;
     config.env.extend([
@@ -114,14 +114,7 @@ fn build_core(dir: &Path) -> Core {
     Core { session, store }
 }
 
-fn dirs_next_data_dir() -> std::path::PathBuf {
-    std::env::var("REPS_APP_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").expect("HOME not set");
-            std::path::PathBuf::from(home).join(".local/share/reps-for-claude")
-        })
-}
+fn dirs_next_data_dir() -> std::path::PathBuf { engine::activity::app_home() }
 
 pub(crate) fn persist_and_snapshot(core: &mut Core) -> Snapshot {
     let clock = SystemClock;
@@ -517,9 +510,7 @@ fn debug_stream_start(
     let environment = std::env::var_os("UV_PROJECT_ENVIRONMENT").map(PathBuf::from).unwrap_or_else(|| {
         if cfg!(debug_assertions) { vision_dir.join(".venv") }
         else {
-            let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share"));
-            data.join("reps-for-claude/vision-env")
+            dirs_next_data_dir().join("vision-env")
         }
     });
     let python = environment.join(if cfg!(windows) { "Scripts/python.exe" } else { "bin/python" });

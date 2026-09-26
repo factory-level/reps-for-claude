@@ -3,6 +3,11 @@
 Release: `app/src-tauri/target/release/bundle/deb/Reps for Claude_0.1.0_amd64.deb`.
 Built offline with the pinned MediaPipe Full model and bundled squat video.
 
+> **Pre-rebrand record.** This run predates the rename to RFP, so its paths
+> read `Reps for Claude`. Current builds produce `RFP_0.1.0_amd64.deb` and
+> install to `/usr/lib/RFP`. The names below are left as recorded; the
+> sizes and hashes belong to that artifact.
+
 - Frontend: 18 tests passed, including mode-change pending/error handling and idle/manual screen rendering.
 - Rust workspace: 69 tests passed; one preexisting optional supervisor end-to-end test remains ignored.
 - Isolation test completes and persists a simulated set into the temporary database while verifying real history and plan state remain unchanged.

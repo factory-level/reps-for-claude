@@ -68,7 +68,7 @@ def make_plugin(estimator, capture):
 def test_capabilities_declare_model_schema_and_observation_kinds():
     caps = RepsVisionPlugin().describe_capabilities()
     assert set(caps["supports"]) == {"evaluate", "stream"}
-    # the consumer (reps-for-claude) declares the model it uses
+    # the consumer (RFP) declares the model it uses
     assert caps["model"]["name"] == "mediapipe-pose-landmarker"
     assert caps["model"]["variant"] == "full"
     field_names = [f["name"] for f in caps["configSchema"]["fields"]]

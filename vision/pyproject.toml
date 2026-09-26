@@ -1,7 +1,7 @@
 [project]
 name = "reps-vision"
 version = "0.1.0"
-description = "Pose detection and rep counting sidecar for Reps for Claude"
+description = "Pose detection and rep counting sidecar for RFP (reps for prompts)"
 requires-python = ">=3.12"
 dependencies = []
 

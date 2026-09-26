@@ -22,7 +22,10 @@ for name in ['reps','rfp']:
     if link.is_symlink():link.unlink()
     if link.exists():raise SystemExit('Refusing to overwrite existing '+str(link))
     link.symlink_to(bindir/'reps')
-data=home/'.local/share/reps-for-claude';data.mkdir(parents=True,exist_ok=True)
+data=home/'.local/share/rfp';legacy=home/'.local/share/reps-for-claude'
+# Must precede the mkdir: an empty new directory would make the app skip its own migration.
+if not data.exists() and legacy.is_dir():legacy.rename(data)
+data.mkdir(parents=True,exist_ok=True)
 # Keep a consistent backup before the application migrates existing history.
 if (data/'reps.sqlite').exists() and not (data/'reps.before-rfp.sqlite').exists():
     with sqlite3.connect(data/'reps.sqlite') as source, sqlite3.connect(data/'reps.before-rfp.sqlite') as backup:source.backup(backup)

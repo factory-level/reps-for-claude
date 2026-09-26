@@ -35,3 +35,7 @@ web/*.tsbuildinfo
 
 # Supabase CLI machine-local link state
 **/supabase/.temp/
+
+# Tool caches with absolute paths
+.impeccable/*.cache.json
+app/.impeccable/*.cache.json

@@ -1,6 +1,6 @@
 """usb-mcp-hub plugin: pose estimation + config-driven workout activities.
 
-The plugin is the model reps-for-claude ships into the hub SDK. It is fully
+The plugin is the model RFP ships into the hub SDK. It is fully
 config-driven — nothing here names a specific exercise; the consumer passes
 exercise definitions (joints, thresholds, targets) through ``configure``.
 
@@ -28,7 +28,7 @@ MODEL = {
     "name": "mediapipe-pose-landmarker",
     "variant": "full",
     "sha256": MODEL_SHA256,
-    "source": "reps-for-claude",
+    "source": "rfp",
 }
 
 CONFIG_SCHEMA = {

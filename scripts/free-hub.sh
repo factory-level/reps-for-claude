@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Free the vision hub: kill any leaked hubd + vision-host and release port 8443.
 #
-# The reps-for-claude app supervises its OWN hubd (it spawns `pnpm --filter
+# The RFP app supervises its OWN hubd (it spawns `pnpm --filter
 # @hub/hubd start` and connects to it). When `tauri dev` hot-reloads or the app
 # is hard-killed, that supervised hubd can leak and keep port 8443 bound — the
 # next launch then times out waiting for HUBD READY and silently falls back to
