@@ -43,7 +43,7 @@ contains this machine's history, and remote contains the configured dataset.
 
 ```sh
 pnpm --dir app build
-(cd app/src-tauri && cargo build --release --workspace)
+(cd app/src-tauri && cargo build --release --workspace --features custom-protocol)
 python3 scripts/install-dogfood.py
 ```
 

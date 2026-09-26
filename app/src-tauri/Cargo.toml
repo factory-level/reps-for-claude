@@ -17,6 +17,12 @@ edition = "2021"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Serves the embedded frontend instead of the dev server. `tauri build` passes
+# this; a plain `cargo build --release` does not, and without it the packaged
+# app loads devUrl and shows "Connection refused". DO NOT REMOVE.
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
